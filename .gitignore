@@ -1,0 +1,55 @@
+# Rust
+/target
+**/target
+Cargo.lock.bak
+*.rs.bk
+
+# Node / 前端
+node_modules
+dist
+dist-ssr
+*.local
+.pnpm-store
+frontend/dist
+
+# Tauri
+frontend/src-tauri/target
+frontend/src-tauri/gen
+
+# 编辑器
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+
+# 环境与密钥
+.env
+.env.local
+*.pem
+*.key
+
+# 构建产物
+*.msi
+*.exe
+*.dmg
+*.deb
+*.AppImage
+*.snap
+
+# 临时文件
+/tmp
+*.log
+.trae/documents/
+
+# 数据库与运行时
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Python
+pycore/.venv
+__pycache__/
+*.pyc
+.pytest_cache/

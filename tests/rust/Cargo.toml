@@ -1,0 +1,18 @@
+# PDF-DocVault 集成测试
+#
+# 独立测试 crate(不随应用发布),验证 core 公共 API 的跨模块端到端流程。
+# 详见本目录 README.md 与 .trae/documents/PDF-DocVault-MVP-implementation.md 阶段 I。
+
+[package]
+name = "pdf-docvault-tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+pdf_docvault_core = { path = "../../core" }
+lopdf = { workspace = true }
+image = { workspace = true }
+tempfile = "3.10"

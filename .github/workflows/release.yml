@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, target: aarch64-apple-darwin, artifact: "*.dmg" }
+          - { os: macos-latest, target: x86_64-apple-darwin, artifact: "*.dmg" }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, artifact: "*-setup.exe" }
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, artifact: "*.AppImage" }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 安装 Linux 系统依赖
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libxdo-dev libayatana-appindicator3-dev patchelf qpdf
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: mozilla-actions/sccache-action@v0
+      - uses: swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: 安装前端依赖
+        run: pnpm --dir frontend install --frozen-lockfile
+      - name: 下载 pdfium 二进制
+        shell: bash
+        run: |
+          mkdir -p frontend/src-tauri/resources/pdfium
+          case "${{ matrix.target }}" in
+            x86_64-unknown-linux-gnu)  suffix="linux-x64" ;;
+            x86_64-pc-windows-msvc)    suffix="win-x64" ;;
+            x86_64-apple-darwin)       suffix="darwin-x64" ;;
+            aarch64-apple-darwin)      suffix="darwin-arm64" ;;
+          esac
+          curl -L "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-${suffix}.tgz" \
+            | tar -xz -C frontend/src-tauri/resources/pdfium
+      - name: 构建桌面端
+        run: pnpm --dir frontend tauri build --target ${{ matrix.target }}
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: frontend/src-tauri/target/${{ matrix.target }}/release/bundle/**/${{ matrix.artifact }}

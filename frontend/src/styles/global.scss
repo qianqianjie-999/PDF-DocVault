@@ -1,0 +1,75 @@
+// 全局样式
+@use './variables.scss' as *;
+
+// Element Plus 主题色覆盖(Police Blue 配色)
+:root {
+  --el-color-primary: #{$police-blue};
+  --el-color-primary-light-3: #{$police-blue-light};
+  --el-color-primary-light-5: #7fa5d4;
+  --el-color-primary-light-7: #b3c8e3;
+  --el-color-primary-light-8: #cfdcec;
+  --el-color-primary-light-9: #{$police-blue-50};
+  --el-color-primary-dark-2: #{$police-blue-dark};
+  --el-color-success: #2e7d32;
+  --el-color-warning: #ed6c02;
+  --el-color-danger: #c62828;
+  --el-color-error: #c62828;
+  --el-color-info: #546e7a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei',
+    'Helvetica Neue', Helvetica, Arial, sans-serif;
+  color: $text-primary;
+  background: $bg-page;
+}
+
+a {
+  color: $police-blue;
+  text-decoration: none;
+}
+
+// 滚动条
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #c0c4cc;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #909399;
+}
+
+// 通用卡片
+.app-card {
+  background: $bg-card;
+  border-radius: $radius-base;
+  box-shadow: $shadow-card;
+  padding: 20px;
+}
+
+// 页面标题
+.page-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: $text-primary;
+  margin: 0 0 16px;
+}
+
+// 操作按钮组
+.action-bar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}

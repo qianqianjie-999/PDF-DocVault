@@ -1,0 +1,66 @@
+# PDF-DocVault Cargo Workspace 根配置
+# 详见 docs/architecture.md
+
+[workspace]
+resolver = "2"
+members = ["core", "frontend/src-tauri", "tests/rust"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.94"
+license = "MIT"
+authors = ["PDF-DocVault Team"]
+repository = "https://github.com/pdf-docvault/pdf-docvault"
+description = "PDF-DocVault 密档大师 - 桌面端隐私文档处理中心"
+
+# 统一锁定依赖版本,避免各 crate 版本漂移
+[workspace.dependencies]
+# 异步与并行
+tokio = { version = "1.43", features = ["full"] }
+rayon = "1.10"
+# 序列化
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# 错误与日志
+thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# PDF 处理
+lopdf = { version = "0.34", default-features = false, features = ["nom_parser"] }
+pdfium-render = "0.9"
+# 图像(image 基础处理;photon-rs 高级增强待 OCR 阶段引入)
+image = "0.25"
+# 证件排版标签文字栅格化
+ab_glyph = "0.2"
+# 数据库
+rusqlite = { version = "0.32", features = ["bundled"] }
+# 设备指纹
+machine-uid = "0.5"
+# 加密签名
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+rand = "0.8"
+sha2 = "0.10"
+base64 = "0.22"
+hex = "0.4"
+# 时间
+chrono = { version = "0.4", features = ["serde"] }
+# UUID
+uuid = { version = "1.10", features = ["v4", "serde"] }
+# Tauri(仅 src-tauri 用)
+tauri = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-os = "2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.dev]
+opt-level = 1  # 加快 pdfium/lopdf 调试构建

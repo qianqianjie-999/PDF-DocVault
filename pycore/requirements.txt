@@ -1,0 +1,10 @@
+# pycore Python 依赖
+#
+# OCR 引擎(二选一即可,rapidocr 为默认推荐):
+#   rapidocr                —— PaddleOCR 官方 PP-OCR 模型的 ONNX 移植,约 60MB,CPU 推理快,首选
+#   rapidocr-onnxruntime    —— rapidocr v1 旧包名,老环境兼容用
+#   paddleocr + paddlepaddle —— 规划书原始选型,依赖 500MB+,可选安装,效果与 rapidocr 一致
+rapidocr>=2.0
+onnxruntime>=1.17
+# Word→PDF WPS CLI 回退引擎的质量后处理(内嵌图片按 DPI 降采样 + JPEG 重压缩)
+pikepdf>=8.0

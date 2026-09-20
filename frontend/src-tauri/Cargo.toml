@@ -1,0 +1,39 @@
+[package]
+name = "pdf-docvault"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "PDF-DocVault 桌面端 - 密档大师"
+
+[lib]
+name = "pdf_docvault_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+pdf_docvault_core = { path = "../../core" }
+tauri = { workspace = true, features = ["protocol-asset"] }
+tauri-plugin-dialog = { workspace = true }
+tauri-plugin-fs = { workspace = true }
+tauri-plugin-shell = { workspace = true }
+tauri-plugin-os = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+# 以下为 Tauri 命令层直接使用的库(与 core 共享 workspace 版本)
+rusqlite = { workspace = true }
+chrono = { workspace = true }
+lopdf = { workspace = true }
+image = { workspace = true }
+
+[features]
+# 默认启用自定义协议
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
