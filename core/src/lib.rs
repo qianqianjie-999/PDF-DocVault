@@ -7,6 +7,7 @@
 //! - [`image`]: 图像增强(去阴影/二值化等,扫描增强占位)
 //! - [`pybridge`]: Rust-Python 进程隔离调用基建(spawn pycore 子进程)
 //! - [`ocr`]: OCR 文字识别(Rust-Python 进程隔离调用 pycore)
+//! - [`search`]: Tantivy 全文搜索(文档元数据索引)
 //! - [`storage`]: SQLite 存储与目录管理
 //! - [`activation`]: 设备指纹与捐赠激活验证
 //! - [`task`]: 任务状态机与进度上报
@@ -18,6 +19,7 @@ pub mod ocr;
 pub mod office;
 pub mod pdf;
 pub mod pybridge;
+pub mod search;
 pub mod storage;
 pub mod task;
 
