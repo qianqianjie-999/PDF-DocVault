@@ -24,6 +24,17 @@ export interface ToImagesOutput {
   count: number
 }
 
+/** 转图片入参(与 Rust 端 ToImagesInput 对齐) */
+export interface ToImagesInput {
+  input: string
+  out_dir: string
+  dpi: number
+  format?: string
+  task_id: string
+  /** 待导出页码(1-based,离散列表);缺省或空 = 整本导出 */
+  pages?: number[]
+}
+
 export interface PageCountOutput {
   count: number
 }

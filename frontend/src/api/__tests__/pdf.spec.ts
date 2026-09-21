@@ -74,10 +74,22 @@ describe('pdfApi 参数组装', () => {
     })
   })
 
-  it('toImages 传递 out_dir/dpi/format/task_id', async () => {
+  it('toImages 传递 out_dir/dpi/format/task_id,可选 pages', async () => {
     await pdfApi.toImages('/a.pdf', '/out', 200, 'jpg', 't3')
     expect(mockedInvoke).toHaveBeenCalledWith('pdf_to_images', {
       input: { input: '/a.pdf', out_dir: '/out', dpi: 200, format: 'jpg', task_id: 't3' },
+    })
+
+    await pdfApi.toImages('/a.pdf', '/out', 200, 'jpg', 't3', [1, 3, 5])
+    expect(mockedInvoke).toHaveBeenCalledWith('pdf_to_images', {
+      input: {
+        input: '/a.pdf',
+        out_dir: '/out',
+        dpi: 200,
+        format: 'jpg',
+        task_id: 't3',
+        pages: [1, 3, 5],
+      },
     })
   })
 

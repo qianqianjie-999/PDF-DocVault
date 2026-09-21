@@ -189,9 +189,64 @@ fn render_all_pages_count() {
         &out_dir,
         96,
         image::ImageFormat::Png,
+        None,
         |_, _| {},
     )
     .expect("渲染应成功");
     assert_eq!(pages.len(), 3);
     assert!(pages.iter().all(|p| p.is_file()));
+}
+
+/// 按页列表渲染:输出文件数 == 去重后页数,文件名保留原始页码
+#[test]
+fn render_pages_by_list() {
+    if !ensure_pdfium() {
+        eprintln!("跳过:未找到 pdfium 动态库(可设置 PDFIUM_PATH)");
+        return;
+    }
+    let src = make_pdf(5);
+    let out_dir = src.parent().unwrap().join("rendered-by-list");
+
+    // 乱序 + 重复传入,应被去重排序后按原始页码命名(不重新编号)
+    let pages = pdf_docvault_core::pdf::render_all_pages(
+        &src,
+        &out_dir,
+        96,
+        image::ImageFormat::Png,
+        Some(&[3, 1, 3]),
+        |_, _| {},
+    )
+    .expect("按页列表渲染应成功");
+    assert_eq!(pages.len(), 2, "去重后应输出 2 张图片");
+    assert_eq!(
+        pages[0],
+        out_dir.join("page-0001.png"),
+        "首张图片文件名应为原始页码 1"
+    );
+    assert_eq!(
+        pages[1],
+        out_dir.join("page-0003.png"),
+        "次张图片文件名应为原始页码 3"
+    );
+}
+
+/// 按页列表渲染:页码越界应返回明确错误
+#[test]
+fn render_pages_out_of_range_rejected() {
+    if !ensure_pdfium() {
+        eprintln!("跳过:未找到 pdfium 动态库(可设置 PDFIUM_PATH)");
+        return;
+    }
+    let src = make_pdf(3);
+    let out_dir = src.parent().unwrap().join("rendered-oob");
+
+    let result = pdf_docvault_core::pdf::render_all_pages(
+        &src,
+        &out_dir,
+        96,
+        image::ImageFormat::Png,
+        Some(&[4]),
+        |_, _| {},
+    );
+    assert!(result.is_err(), "页码 4 超出共 3 页应报错");
 }

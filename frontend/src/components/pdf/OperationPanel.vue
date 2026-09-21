@@ -61,6 +61,7 @@ const watermarkRotation = ref(45)
 const compressLevel = ref(6)
 const imagesDpi = ref(150)
 const imagesFormat = ref<'png' | 'jpg' | 'webp'>('png')
+const imagesPages = ref('') // 转图片页码范围输入,留空 = 整本导出
 
 // 需要单文件的操作
 const needsSingleFile = computed(() =>
@@ -79,11 +80,29 @@ const canRun = computed(() => {
   return filesStore.selectedFiles.length > 0
 })
 
+/**
+ * 解析页码输入为 1-based 页码列表,支持逗号分隔的单页与闭区间范围,
+ * 如 "1,3,5-8" → [1,3,5,6,7,8];非法片段、零与负数会被忽略,
+ * "8-5" 视为 "5-8",输出保持输入顺序。
+ */
 function parsePageNums(s: string): number[] {
-  return s
-    .split(',')
-    .map((t) => parseInt(t.trim(), 10))
-    .filter((n) => !isNaN(n) && n > 0)
+  const nums: number[] = []
+  for (const part of s.split(',')) {
+    const t = part.trim()
+    if (!t) continue
+    const range = t.match(/^(\d+)\s*-\s*(\d+)$/)
+    if (range) {
+      let a = parseInt(range[1], 10)
+      let b = parseInt(range[2], 10)
+      if (isNaN(a) || isNaN(b)) continue
+      if (a > b) [a, b] = [b, a]
+      for (let n = Math.max(a, 1); n <= b; n++) nums.push(n)
+    } else {
+      const n = parseInt(t, 10)
+      if (!isNaN(n) && n > 0) nums.push(n)
+    }
+  }
+  return nums
 }
 
 function parseRanges(s: string): { start: number; end: number }[] {
@@ -217,6 +236,8 @@ async function run() {
         const first = files[0].path
         const dir = dirname(first)
         const taskName = `to-images-${Date.now()}`
+        // 页码输入解析:留空 = 整本导出,否则展开为离散页列表(去重排序由后端完成)
+        const pages = parsePageNums(imagesPages.value)
         // 监听进度
         taskStore.init()
         const unlisten = await (await import('@tauri-apps/api/event')).listen<{
@@ -231,7 +252,14 @@ async function run() {
             total.value = e.payload.total
           }
         })
-        const res = await pdfApi.toImages(first, dir, imagesDpi.value, imagesFormat.value, taskName)
+        const res = await pdfApi.toImages(
+          first,
+          dir,
+          imagesDpi.value,
+          imagesFormat.value,
+          taskName,
+          pages.length > 0 ? pages : undefined,
+        )
         unlisten()
         progress.value = 100
         ElMessage.success(`转图片完成: ${res.count} 张`)
@@ -351,6 +379,9 @@ async function run() {
 
       <!-- 转图片 -->
       <el-form v-else-if="op === 'toImages'" label-width="100px" label-position="left">
+        <el-form-item label="页码范围">
+          <el-input v-model="imagesPages" placeholder="如 1,3,5-8(留空表示全部)" />
+        </el-form-item>
         <el-form-item label="DPI">
           <el-input-number v-model="imagesDpi" :min="72" :max="600" :step="72" />
         </el-form-item>

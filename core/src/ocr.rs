@@ -288,6 +288,7 @@ pub(crate) fn prepare_images(
                 &out_dir,
                 dpi,
                 ImageFormat::Png,
+                None,
                 |cur, total| notify(cur, total.max(1) * total_inputs),
             )?;
             // 渲染页重命名为 "<源文件名>_p001.png":该文件名会成为

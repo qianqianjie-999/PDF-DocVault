@@ -11,9 +11,7 @@ use uuid::Uuid;
 
 use crate::error::CmdResult;
 use crate::state::AppState;
-use pdf_docvault_core::pdf::{
-    self, EncryptOptions, PageRange, Permissions, SplitMode, WatermarkOptions,
-};
+use pdf_docvault_core::pdf::{self, EncryptOptions, Permissions, SplitMode, WatermarkOptions};
 
 /// 进度事件 payload
 #[derive(Debug, Clone, Serialize)]
@@ -347,6 +345,9 @@ pub struct ToImagesInput {
     pub out_dir: PathBuf,
     pub dpi: u32,
     pub format: Option<String>,
+    /// 待导出页码(1-based,离散列表);None 或空 = 整本导出。
+    /// 去重/排序/越界校验由 core 层 `render_all_pages` 统一处理。
+    pub pages: Option<Vec<u32>>,
     pub task_id: String,
 }
 
@@ -375,12 +376,13 @@ pub async fn pdf_to_images(
     let inp = input.input.clone();
     let out_dir = input.out_dir.clone();
     let dpi = input.dpi;
+    let pages = input.pages;
     let app_handle = app.clone();
     let tid = task_id.clone();
     let state_tasks = state.tasks.clone();
 
     let results = tokio::task::spawn_blocking(move || {
-        pdf::render::render_all_pages(&inp, &out_dir, dpi, fmt, |current, total| {
+        pdf::render::render_all_pages(&inp, &out_dir, dpi, fmt, pages.as_deref(), |current, total| {
             state_tasks.report(&tid, current, total);
             emit_progress(&app_handle, &tid, "to_images", current, total);
         })
@@ -427,10 +429,6 @@ pub async fn pdf_page_count(input: PageCountInput) -> CmdResult<PageCountOutput>
 }
 
 // 复用以避免未使用警告
-#[allow(unused)]
-fn _unused_page_range() -> PageRange {
-    PageRange { start: 1, end: 1 }
-}
 #[allow(unused)]
 fn _unused_perms() -> Permissions {
     Permissions::default()

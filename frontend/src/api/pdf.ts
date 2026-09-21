@@ -3,6 +3,7 @@ import type {
   MergeOutput,
   SplitOutput,
   CompressOutput,
+  ToImagesInput,
   ToImagesOutput,
   PageCountOutput,
   SplitMode,
@@ -60,10 +61,24 @@ export const pdfApi = {
   compress: (input: string, output: string, level: number = 6) =>
     call<CompressOutput>('compress_pdf', { input: { input, output, level } }),
 
-  toImages: (input: string, outDir: string, dpi: number, format: string, taskId: string) =>
-    call<ToImagesOutput>('pdf_to_images', {
-      input: { input, out_dir: outDir, dpi, format, task_id: taskId },
-    }),
+  toImages: (
+    input: string,
+    outDir: string,
+    dpi: number,
+    format: string,
+    taskId: string,
+    pages?: number[],
+  ) => {
+    const payload: ToImagesInput = {
+      input,
+      out_dir: outDir,
+      dpi,
+      format,
+      task_id: taskId,
+      pages,
+    }
+    return call<ToImagesOutput>('pdf_to_images', { input: payload })
+  },
 
   pageCount: (input: string) => call<PageCountOutput>('pdf_page_count', { input: { input } }),
 }
