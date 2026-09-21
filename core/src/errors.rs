@@ -41,6 +41,9 @@ pub enum CoreError {
     #[error("页面不存在: {0}")]
     PageNotFound(u32),
 
+    #[error("搜索错误: {0}")]
+    Search(String),
+
     #[error("参数无效: {0}")]
     InvalidArgument(String),
 
@@ -66,6 +69,7 @@ impl CoreError {
             CoreError::Encrypt(_) => "ENCRYPT",
             CoreError::Ocr(_) => "OCR",
             CoreError::PageNotFound(_) => "PAGE_NOT_FOUND",
+            CoreError::Search(_) => "SEARCH",
             CoreError::InvalidArgument(_) => "INVALID_ARG",
             CoreError::TaskCancelled => "TASK_CANCELLED",
             CoreError::Internal(_) => "INTERNAL",
@@ -77,6 +81,13 @@ impl CoreError {
 impl From<pdfium_render::prelude::PdfiumError> for CoreError {
     fn from(e: pdfium_render::prelude::PdfiumError) -> Self {
         CoreError::Pdfium(e.to_string())
+    }
+}
+
+/// TantivyError → CoreError 自动转换(保留 ? 传播能力)
+impl From<tantivy::TantivyError> for CoreError {
+    fn from(e: tantivy::TantivyError) -> Self {
+        CoreError::Search(e.to_string())
     }
 }
 

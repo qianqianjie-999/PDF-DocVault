@@ -48,6 +48,9 @@ hex = "0.4"
 chrono = { version = "0.4", features = ["serde"] }
 # UUID
 uuid = { version = "1.10", features = ["v4", "serde"] }
+# 全文搜索(Tantivy 0.22 配套的 tantivy-jieba 为 0.11;若 cargo check 报版本冲突,以 docs.rs/crate/tantivy-jieba 查兼容表后调整)
+tantivy = "0.22"
+tantivy-jieba = "0.11"
 # Tauri(仅 src-tauri 用)
 tauri = "2"
 tauri-plugin-dialog = "2"

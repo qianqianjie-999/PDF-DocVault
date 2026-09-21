@@ -31,6 +31,9 @@ base64 = { workspace = true }
 hex = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
+# 全文搜索
+tantivy = { workspace = true }
+tantivy-jieba = { workspace = true }
 
 [dev-dependencies]
 criterion = "0.5"
