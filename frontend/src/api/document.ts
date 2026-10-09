@@ -1,7 +1,13 @@
 import { call } from './index'
-import type { ListResult } from '@/types/document'
+import type { ListResult, SearchDocument } from '@/types/document'
 
 export const documentApi = {
+  /** 全文搜索(文件名/标签/类型);fileType/limit 可选 */
+  search: (keyword: string, fileType?: string, limit?: number) =>
+    call<SearchDocument[]>('search_documents', {
+      params: { keyword, file_type: fileType ?? null, limit: limit ?? null },
+    }),
+
   list: (params: {
     page?: number
     page_size?: number
