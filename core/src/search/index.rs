@@ -1,6 +1,7 @@
 //! Tantivy 索引生命周期与 Schema
 
 use std::path::Path;
+use std::sync::Mutex;
 
 use tantivy::schema::{Schema, TextFieldIndexing, TextOptions, STORED, STRING};
 use tantivy::tokenizer::{RemoveLongFilter, TextAnalyzer};
@@ -22,11 +23,15 @@ pub struct SearchSchema {
 }
 
 /// Tantivy 搜索引擎句柄(索引/读/写一体,单进程使用)
+///
+/// writer 用 Mutex 包裹:tantivy 0.22 的 `commit` 需要 `&mut self`,
+/// 而本句柄以 `&self` 提供 API 并将放入 `Arc` 跨命令共享,故用内部可变性,
+/// 同时天然序列化多个命令的并发写。
 #[allow(dead_code)]
 pub struct TantivySearch {
     index: Index,
-    reader: IndexReader,
-    writer: IndexWriter,
+    pub(crate) reader: IndexReader,
+    pub(crate) writer: Mutex<IndexWriter>,
     pub sc: SearchSchema,
 }
 
@@ -74,7 +79,7 @@ impl TantivySearch {
             .reload_policy(tantivy::ReloadPolicy::OnCommitWithDelay)
             .try_into()?;
         // 50MB 写入堆预算:单机低频 CRUD 足够
-        let writer = index.writer(50_000_000)?;
+        let writer = Mutex::new(index.writer(50_000_000)?);
         Ok(Self {
             index,
             reader,
