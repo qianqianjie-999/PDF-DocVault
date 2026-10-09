@@ -6,8 +6,9 @@ mod commands;
 mod error;
 mod state;
 
-use commands::{document_commands, ocr_commands, office_commands, pdf_commands, scan_commands, system_commands, task_commands, user_commands};
+use commands::{document_commands, ocr_commands, office_commands, pdf_commands, scan_commands, search_commands, system_commands, task_commands, user_commands};
 use state::AppState;
+use std::sync::Arc;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -30,7 +31,33 @@ pub fn run() {
             let db_path = app_data.join("docvault.db");
             tracing::info!("数据库路径: {}", db_path.display());
             let db = pdf_docvault_core::storage::Database::open(&db_path)?;
-            app.manage(AppState::new(db));
+
+            // 初始化 Tantivy 全文搜索索引:失败自动清空重建;再失败则降级为无搜索
+            let index_dir = app_data.join("tantivy_index");
+            let search = match pdf_docvault_core::search::TantivySearch::open(&index_dir) {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    tracing::warn!("打开搜索索引失败,尝试自动重建: {e}");
+                    let _ = std::fs::remove_dir_all(&index_dir);
+                    match pdf_docvault_core::search::TantivySearch::open(&index_dir) {
+                        Ok(s) => match rebuild_search_index(&db, &s) {
+                            Ok(n) => {
+                                tracing::info!("搜索索引已重建,共 {n} 条文档");
+                                Some(s)
+                            }
+                            Err(e) => {
+                                tracing::warn!("搜索索引重建失败: {e}");
+                                Some(s) // 索引可用但为空,后续导入会增量填充
+                            }
+                        },
+                        Err(e2) => {
+                            tracing::error!("搜索索引初始化失败,搜索功能降级: {e2}");
+                            None
+                        }
+                    }
+                }
+            };
+            app.manage(AppState::new(db, search.map(Arc::new)));
 
             // 设置 pdfium 库路径(资源目录)
             let resource_dir = app.path().resource_dir()?;
@@ -62,6 +89,7 @@ pub fn run() {
             document_commands::delete_document,
             document_commands::tag_document,
             document_commands::import_document,
+            search_commands::search_documents,
             // 用户/激活
             user_commands::check_activation,
             user_commands::activate,
@@ -90,4 +118,23 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("运行 PDF-DocVault 时发生错误");
+}
+
+/// 从 SQLite 重建搜索索引(索引损坏/schema 版本升级后自动触发)
+fn rebuild_search_index(
+    db: &pdf_docvault_core::storage::Database,
+    search: &pdf_docvault_core::search::TantivySearch,
+) -> pdf_docvault_core::Result<usize> {
+    let rows: Vec<(i64, String, String, Option<String>)> = db.with_conn(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, name, file_type, tags FROM documents WHERE status != 'deleted'",
+        )?;
+        let it = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+        Ok(it.collect::<std::result::Result<Vec<_>, _>>()?)
+    })?;
+    let n = rows.len();
+    for (id, name, ft, tags) in &rows {
+        search.index_document(*id, name, ft, tags.as_deref())?;
+    }
+    Ok(n)
 }

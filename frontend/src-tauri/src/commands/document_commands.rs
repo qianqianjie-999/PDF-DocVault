@@ -125,6 +125,13 @@ pub async fn import_document(state: State<'_, AppState>, params: ImportParams) -
         )?;
         Ok(conn.last_insert_rowid())
     })?;
+
+    // 实时同步搜索索引(失败仅告警,不阻断导入)
+    if let Some(search) = &state.search {
+        if let Err(e) = search.index_document(id, &name, &params.file_type, None) {
+            tracing::warn!("搜索索引同步失败(导入): {e}");
+        }
+    }
     Ok(id)
 }
 
@@ -144,6 +151,21 @@ pub async fn tag_document(state: State<'_, AppState>, params: TagParams) -> CmdR
         )?;
         Ok(())
     })?;
+
+    // 回查文件名/类型用于重索引
+    let (name, file_type) = state.db.with_conn(|conn| {
+        Ok(conn.query_row(
+            "SELECT name, file_type FROM documents WHERE id = ?",
+            params![params.id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+        )?)
+    })?;
+
+    if let Some(search) = &state.search {
+        if let Err(e) = search.update_document(params.id, &name, &file_type, Some(&params.tags)) {
+            tracing::warn!("搜索索引同步失败(标签): {e}");
+        }
+    }
     Ok(true)
 }
 
@@ -169,6 +191,13 @@ pub async fn delete_document(state: State<'_, AppState>, params: DeleteParams) -
             )?;
             Ok(())
         })?;
+    }
+
+    // 软删/硬删都从索引移除(软删后 list 不再返回,搜索也应一致)
+    if let Some(search) = &state.search {
+        if let Err(e) = search.remove_document(params.id) {
+            tracing::warn!("搜索索引同步失败(删除): {e}");
+        }
     }
     Ok(true)
 }

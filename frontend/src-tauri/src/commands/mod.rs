@@ -5,6 +5,7 @@ pub mod ocr_commands;
 pub mod office_commands;
 pub mod pdf_commands;
 pub mod scan_commands;
+pub mod search_commands;
 pub mod system_commands;
 pub mod task_commands;
 pub mod user_commands;
