@@ -3,8 +3,8 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use tantivy::schema::{Schema, TextFieldIndexing, TextOptions, STORED, STRING};
-use tantivy::tokenizer::{RemoveLongFilter, TextAnalyzer};
+use tantivy::schema::{Schema, TextFieldIndexing, TextOptions, INDEXED, STORED, STRING};
+use tantivy::tokenizer::{LowerCaser, RemoveLongFilter, TextAnalyzer};
 use tantivy::{Index, IndexReader, IndexWriter};
 
 use crate::errors::Result;
@@ -29,7 +29,7 @@ pub struct SearchSchema {
 /// 同时天然序列化多个命令的并发写。
 #[allow(dead_code)]
 pub struct TantivySearch {
-    index: Index,
+    pub(crate) index: Index,
     pub(crate) reader: IndexReader,
     pub(crate) writer: Mutex<IndexWriter>,
     pub sc: SearchSchema,
@@ -38,7 +38,8 @@ pub struct TantivySearch {
 impl SearchSchema {
     fn build() -> Self {
         let mut builder = Schema::builder();
-        let doc_id = builder.add_u64_field("doc_id", STORED);
+        // doc_id 必须索引(INDEXED):delete_term 按 doc_id 删除/整体替换依赖倒排;同时 STORED 供命中回查
+        let doc_id = builder.add_u64_field("doc_id", INDEXED | STORED);
         // jieba 分词 + 带词频位置索引;不存储正文,结果回查 SQLite
         let text_options = TextOptions::default().set_indexing_options(
             TextFieldIndexing::default()
@@ -69,8 +70,10 @@ impl TantivySearch {
             Index::create_in_dir(dir, sc.schema.clone())?
         };
         // 注册 jieba 中文分词器(QueryParser/手动分词均按名取用)
+        // LowerCaser:索引与查询共用本 analyzer,大小写对称(如 "Fedora"/"fedora" 互认)
         let jieba = TextAnalyzer::builder(tantivy_jieba::JiebaTokenizer)
             .filter(RemoveLongFilter::limit(40))
+            .filter(LowerCaser)
             .build();
         index.tokenizers().register("jieba", jieba);
 

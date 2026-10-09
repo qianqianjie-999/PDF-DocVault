@@ -6,8 +6,8 @@
 use std::sync::MutexGuard;
 
 use tantivy::doc;
-use tantivy::Term;
 use tantivy::IndexWriter;
+use tantivy::Term;
 
 use super::index::TantivySearch;
 use crate::errors::{CoreError, Result};
@@ -82,18 +82,32 @@ mod tests {
     #[test]
     fn index_then_search_chinese_name_and_tags() {
         let (_dir, s) = setup();
-        s.index_document(1, "2026采购发票.pdf", "pdf", None).unwrap();
-        s.index_document(2, "安装fedora指导.docx", "docx", None).unwrap();
+        s.index_document(1, "2026采购发票.pdf", "pdf", None)
+            .unwrap();
+        s.index_document(2, "安装fedora指导.docx", "docx", None)
+            .unwrap();
 
         let hits = s.search("发票", None, 10).unwrap();
         assert_eq!(hits.len(), 1, "应只命中发票文档");
         assert_eq!(hits[0].doc_id, 1);
 
         // 标签命中
-        s.index_document(3, "扫描件.pdf", "pdf", Some("发票 报销")).unwrap();
+        s.index_document(3, "扫描件.pdf", "pdf", Some("发票 报销"))
+            .unwrap();
         let hits2 = s.search("报销", None, 10).unwrap();
         assert_eq!(hits2.len(), 1);
         assert_eq!(hits2[0].doc_id, 3);
+
+        // 无标签文档不应被标签词误命中
+        let hits3 = s.search("不存在的词", None, 10).unwrap();
+        assert!(hits3.is_empty());
+
+        // LowerCaser:查询侧任意大小写均能命中(索引/查询共用同一分词链,对称)
+        for kw in ["fedora", "FEDORA", "Fedora"] {
+            let hits4 = s.search(kw, None, 10).unwrap();
+            assert_eq!(hits4.len(), 1, "查询 {kw} 应命中 fedora 文档");
+            assert_eq!(hits4[0].doc_id, 2);
+        }
     }
 
     #[test]
