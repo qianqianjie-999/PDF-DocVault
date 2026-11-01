@@ -36,7 +36,8 @@ PDF-DocVault 是一款面向个人和企业的桌面端智能文档处理工具,
 | 文档扫描 | ✅ | 纯 Rust:边界检测/透视矫正/去阴影/黑白扫描/多图合成 PDF |
 | 文档管理 | ✅ | 列表/标签/删除 |
 | 卡密激活 | ✅ | 卡密兑换 → 离线验签，永久授权 |
-| OCR/扫描识别 | ⏳ | 规划中(Python/PaddleOCR) |
+| OCR 识别 | ✅ | rapidocr（随包内置模型，完全离线） |
+| 拍图转 Word/Excel | ✅ | pycore + python-docx/openpyxl |
 
 ## 快速开始
 
@@ -47,6 +48,19 @@ PDF-DocVault 是一款面向个人和企业的桌面端智能文档处理工具,
 - Linux(Ubuntu):`libwebkit2gtk-4.1-dev`、`libgtk-3-dev`、`librsvg2-dev`、`libxdo-dev`、`libayatana-appindicator3-dev`
 - Linux(Fedora):`webkit2gtk4.1-devel`、`gtk3-devel`、`librsvg2-devel`、`libxdo-dev`、`libayatana-appindicator3-devel`
 - 推荐使用 Distrobox 容器隔离环境:见 [scripts/tauri-distrobox-setup.sh](scripts/tauri-distrobox-setup.sh)
+
+### 打包前必须先准备 pycore 运行时
+
+加密 / OCR / 图片转 Word·Excel / Word→PDF 四条链路都经 `pycore` 调 Python。
+发布包必须带上自包含运行时（含解释器），否则这些功能在用户机上不可用：
+
+```bash
+scripts/pack-pycore-runtime.sh              # 完整版,约 411MB
+scripts/pack-pycore-runtime.sh --core-only  # 不含 OCR,约 94MB
+```
+
+`build.rs` 会在 release 打包时检查,缺失直接中止。细节与排障见
+[docs/pycore-packaging.md](docs/pycore-packaging.md)。
 
 ### 安装与运行
 

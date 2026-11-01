@@ -14,8 +14,6 @@ use crate::errors::{CoreError, Result};
 /// 进度回调:`(current_page, total_pages)`
 pub type ProgressFn = Box<dyn Fn(u32, u32) + Send + Sync>;
 
-static PDFIUM: OnceLock<Pdfium> = OnceLock::new();
-
 /// 定位 pdfium 动态库所在目录
 fn locate_pdfium_dir() -> Result<PathBuf> {
     // 1. 环境变量
@@ -49,18 +47,31 @@ fn locate_pdfium_dir() -> Result<PathBuf> {
     ))
 }
 
+/// pdfium 全局实例。
+///
+/// 存 `Result` 是为了让「库缺失」也能被 `get_or_init` 缓存下来 —— 一次失败后
+/// 每个线程都重试定位/绑定没有意义,而且会让错误信息散落多处。
+static PDFIUM: OnceLock<std::result::Result<Pdfium, String>> = OnceLock::new();
+
 fn pdfium() -> Result<&'static Pdfium> {
-    if let Some(p) = PDFIUM.get() {
-        return Ok(p);
+    // 必须用 get_or_init 而不是「先 get 再 set」:
+    // 后者在并发下会让多个线程各自 bind_to_library + Pdfium::new,而 pdfium-render
+    // 每 new 一次就调 FPDF_InitLibrary,drop 时调 FPDF_DestroyLibrary ——
+    // 多出来的那份一旦被 drop,会把别的线程正在用的库销毁,表现为随机崩溃
+    // (实测三个并发渲染测试触发 SIGTRAP,三次里挂一次)。
+    let cell = PDFIUM.get_or_init(|| init_pdfium().map_err(|e| e.to_string()));
+    match cell {
+        Ok(p) => Ok(p),
+        Err(msg) => Err(CoreError::Pdfium(msg.clone())),
     }
+}
+
+fn init_pdfium() -> Result<Pdfium> {
     let dir = locate_pdfium_dir()?;
     let lib_path = Pdfium::pdfium_platform_library_name_at_path(&dir);
     let bindings = Pdfium::bind_to_library(lib_path)
         .map_err(|e| CoreError::Pdfium(format!("绑定 pdfium 库失败: {e}")))?;
-    let pdfium = Pdfium::new(bindings);
-    // 写入 OnceLock(若已被其他线程写入则忽略)
-    let _ = PDFIUM.set(pdfium);
-    Ok(PDFIUM.get().expect("pdfium 已初始化"))
+    Ok(Pdfium::new(bindings))
 }
 
 /// 渲染单页为图片字节
@@ -89,7 +100,11 @@ pub fn render_page_to_bytes(
 }
 
 /// 渲染单页为 image::DynamicImage
-pub fn render_page_to_image(input: &Path, page_index: u32, dpi: u32) -> Result<image::DynamicImage> {
+pub fn render_page_to_image(
+    input: &Path,
+    page_index: u32,
+    dpi: u32,
+) -> Result<image::DynamicImage> {
     let pdfium = pdfium()?;
     let document = pdfium.load_pdf_from_file(input, None)?;
     let page = document.pages().get(page_index as PdfPageIndex)?;

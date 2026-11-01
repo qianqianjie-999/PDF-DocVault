@@ -63,6 +63,18 @@ deploy/redeem-worker/.wrangler
 
 # Python
 pycore/.venv
+pycore/__pycache__
+pycore/**/__pycache__
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# 打包时由 scripts/pack-pycore-runtime.sh 生成(含自带解释器,数百 MB,不入库)
+frontend/src-tauri/resources/pycore/
+frontend/src-tauri/resources/pycore.old-*
+# 脚本下载解释器的缓存(HOME 不可用时会落到仓库内)
+.cache/
+# 本地测试样本与操作产物
+frontend/src-tauri/*.pdf
+frontend/src-tauri/compressed-*.pdf
+:memory:.ses

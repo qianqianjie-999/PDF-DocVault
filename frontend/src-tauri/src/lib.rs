@@ -6,7 +6,10 @@ mod commands;
 mod error;
 mod state;
 
-use commands::{document_commands, license_commands, ocr_commands, office_commands, pdf_commands, scan_commands, search_commands, system_commands, task_commands, user_commands};
+use commands::{
+    document_commands, license_commands, ocr_commands, office_commands, pdf_commands,
+    scan_commands, search_commands, system_commands, task_commands, user_commands,
+};
 use state::AppState;
 use std::sync::Arc;
 use tauri::Manager;
@@ -67,6 +70,20 @@ pub fn run() {
                 tracing::info!("pdfium 路径: {}", pdfium_dir.display());
             } else {
                 tracing::warn!("未找到 pdfium 资源目录: {}", pdfium_dir.display());
+            }
+
+            // 把随包分发的 pycore 运行时交给 core(加密/OCR/Office 三条链路都走它)。
+            // 不设这个变量时,core 只能靠 current_exe 猜路径;而 Linux 下可执行文件在
+            // /usr/bin、资源在 /usr/lib/<app>/ 下,猜不中。这里用 Tauri 解析好的绝对路径。
+            let pycore_dir = resource_dir.join("resources").join("pycore");
+            if pycore_dir.join("main.py").is_file() {
+                std::env::set_var("PYCORE_DIR", &pycore_dir);
+                tracing::info!("pycore 路径: {}", pycore_dir.display());
+            } else {
+                tracing::warn!(
+                    "未找到 pycore 资源目录: {}(加密/OCR/Office 将不可用)",
+                    pycore_dir.display()
+                );
             }
             Ok(())
         })
@@ -131,9 +148,8 @@ fn rebuild_search_index(
     search: &pdf_docvault_core::search::TantivySearch,
 ) -> pdf_docvault_core::Result<usize> {
     let rows: Vec<(i64, String, String, Option<String>)> = db.with_conn(|conn| {
-        let mut stmt = conn.prepare(
-            "SELECT id, name, file_type, tags FROM documents WHERE status != 'deleted'",
-        )?;
+        let mut stmt = conn
+            .prepare("SELECT id, name, file_type, tags FROM documents WHERE status != 'deleted'")?;
         let it = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
         Ok(it.collect::<std::result::Result<Vec<_>, _>>()?)
     })?;

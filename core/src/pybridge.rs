@@ -88,16 +88,30 @@ pub(crate) fn parse_response(stdout: &str) -> Option<PyResponse> {
 
 // ===== Python 解释器探测 =====
 
-/// 依序探测:环境变量 `PYCORE_PYTHON` → `pycore/.venv/bin/python` → PATH 中的 python3。
+/// 依序探测:环境变量 `PYCORE_PYTHON` → 随包内置解释器 → `pycore/.venv/bin/python`
+/// → PATH 中的 python3。
+///
+/// 内置解释器排在 venv 之前:打包版目录里永远带 `python/`,而用户机上不会有 venv;
+/// 开发机上两者都可能存在,此时以「能独立运行」的内置运行时为准,避免误用
+/// 绑定了系统路径的 venv。
 ///
 /// 公开导出以便集成测试与诊断工具按同一规则定位解释器。
 pub fn resolve_python(pycore_dir: &Path) -> Result<PathBuf> {
     let main_py = pycore_dir.join("main.py");
     if !main_py.is_file() {
-        return Err(CoreError::Ocr(format!("未找到 pycore 入口: {}", main_py.display())));
+        return Err(CoreError::Ocr(format!(
+            "未找到 pycore 入口: {}",
+            main_py.display()
+        )));
     }
     if let Ok(p) = std::env::var("PYCORE_PYTHON") {
         let p = PathBuf::from(p);
+        if p.is_file() {
+            return Ok(p);
+        }
+    }
+    for rel in bundled_python_candidates() {
+        let p = pycore_dir.join(rel);
         if p.is_file() {
             return Ok(p);
         }
@@ -108,9 +122,20 @@ pub fn resolve_python(pycore_dir: &Path) -> Result<PathBuf> {
     }
     find_in_path("python3").ok_or_else(|| {
         CoreError::Ocr(
-            "未找到 Python 解释器:请安装 pycore/.venv 或设置 PYCORE_PYTHON 环境变量".into(),
+            "未找到 Python 解释器:安装包缺少内置运行时,或设置 PYCORE_PYTHON 环境变量".into(),
         )
     })
+}
+
+/// 随包内置解释器的候选相对路径(不同平台/构建方式布局不同)。
+///
+/// 由 `scripts/pack-pycore-runtime.sh` 产出,统一放在 `pycore/python/` 下。
+fn bundled_python_candidates() -> &'static [&'static str] {
+    &[
+        "python/bin/python3",
+        "python/python.exe",
+        "python/bin/python",
+    ]
 }
 
 /// 在 PATH 中查找可执行文件

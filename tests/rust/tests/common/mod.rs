@@ -51,17 +51,23 @@ pub fn page_count(path: &Path) -> u32 {
 /// 否则尝试开发环境默认位置(frontend/src-tauri/resources/pdfium/lib)。
 /// 返回 false 表示本环境无 pdfium,调用方应跳过渲染类测试。
 pub fn ensure_pdfium() -> bool {
-    if let Ok(p) = std::env::var("PDFIUM_PATH") {
-        return Path::new(&p).exists();
-    }
-    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../frontend/src-tauri/resources/pdfium/lib");
-    if dev.join("libpdfium.so").is_file() {
-        // SAFETY:测试单线程初始化阶段调用
-        unsafe { std::env::set_var("PDFIUM_PATH", &dev) };
-        return true;
-    }
-    false
+    // 必须串行化:多个测试线程同时调 set_var 是竞态 —— glibc 的 setenv 会重新
+    // 分配 environ 数组,别的线程同时 getenv 可能读到半截指针。OnceLock 让首个
+    // 线程完成设置,其余线程阻塞到设置完成后再读。
+    static READY: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *READY.get_or_init(|| {
+        if let Ok(p) = std::env::var("PDFIUM_PATH") {
+            return Path::new(&p).exists();
+        }
+        let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../frontend/src-tauri/resources/pdfium/lib");
+        if dev.join("libpdfium.so").is_file() {
+            // SAFETY:仅在 OnceLock 的初始化闭包里执行一次,此后再无并发写入
+            unsafe { std::env::set_var("PDFIUM_PATH", &dev) };
+            return true;
+        }
+        false
+    })
 }
 
 /// 探测加密/解密链路可用性:pycore 可定位 且 其解释器能 import pikepdf。
