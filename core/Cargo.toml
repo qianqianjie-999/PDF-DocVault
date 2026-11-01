@@ -36,6 +36,11 @@ uuid = { workspace = true }
 tantivy = { workspace = true }
 tantivy-jieba = { workspace = true }
 
+# 客户端构建不启用 signing:签发函数只存在于本地签发 CLI 中
+[features]
+default = []
+signing = []
+
 [dev-dependencies]
 criterion = "0.5"
 tempfile = "3.10"

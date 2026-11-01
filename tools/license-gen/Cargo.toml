@@ -1,0 +1,19 @@
+[package]
+name = "license-gen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "PDF-DocVault 许可证签发工具(离线运行,私钥不出本机)"
+
+[[bin]]
+name = "license-gen"
+path = "src/main.rs"
+
+[dependencies]
+pdf_docvault_core = { path = "../../core", features = ["signing"] }
+ed25519-dalek = { workspace = true }
+rand = { workspace = true }
+chrono = { workspace = true }
+hex = { workspace = true }

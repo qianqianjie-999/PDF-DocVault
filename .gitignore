@@ -29,6 +29,16 @@ frontend/src-tauri/gen
 *.pem
 *.key
 
+# 许可证签名密钥与卡密(私钥/卡密等于钱,绝不允许入库)
+.license/
+codes*.csv
+codes*.kv.json
+*.kv.json
+
+# Worker 本地测试产物
+deploy/redeem-worker/.tmp
+deploy/redeem-worker/.wrangler
+
 # 构建产物
 *.msi
 *.exe
@@ -41,6 +51,9 @@ frontend/src-tauri/gen
 /tmp
 *.log
 .trae/documents/
+.Trash-*/
+*[0-9]-*.mjs
+*.timestamp-*.mjs
 
 # 数据库与运行时
 *.db

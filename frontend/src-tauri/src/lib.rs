@@ -6,7 +6,7 @@ mod commands;
 mod error;
 mod state;
 
-use commands::{document_commands, ocr_commands, office_commands, pdf_commands, scan_commands, search_commands, system_commands, task_commands, user_commands};
+use commands::{document_commands, license_commands, ocr_commands, office_commands, pdf_commands, scan_commands, search_commands, system_commands, task_commands, user_commands};
 use state::AppState;
 use std::sync::Arc;
 use tauri::Manager;
@@ -93,9 +93,13 @@ pub fn run() {
             // 用户/激活
             user_commands::check_activation,
             user_commands::activate,
-            user_commands::get_donation_qrcode,
+            user_commands::get_purchase_info,
             user_commands::get_device_info,
             user_commands::dev_generate_license,
+            // 卡密兑换(联网签发)
+            license_commands::redeem_voucher,
+            license_commands::rebind_voucher,
+            license_commands::redeem_endpoint,
             // 文档扫描
             scan_commands::scan_enhance_images,
             scan_commands::scan_images_to_pdf,

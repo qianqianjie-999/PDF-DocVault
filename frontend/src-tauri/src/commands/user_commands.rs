@@ -6,13 +6,19 @@ use tauri::State;
 
 use crate::error::CmdResult;
 use crate::state::AppState;
-use pdf_docvault_core::activation::{self, fingerprint, license::License, qrcode};
+use pdf_docvault_core::activation::{self, fingerprint, license::License, purchase};
+use pdf_docvault_core::storage::Database;
 
 #[derive(Serialize)]
 pub struct ActivationStatus {
     pub activated: bool,
     pub plan: Option<String>,
     pub device_id: String,
+    /// 激活时间戳(未激活为 None)
+    pub activated_at: Option<i64>,
+    /// 过期时间戳(0 = 永久)
+    pub expiry: Option<i64>,
+    pub perpetual: bool,
 }
 
 #[tauri::command]
@@ -34,10 +40,14 @@ pub async fn check_activation(state: State<'_, AppState>) -> CmdResult<Activatio
     if let Some(blob) = blob {
         if let Ok(lic) = License::from_blob(&blob) {
             if lic.verify(&device_id).is_ok() {
+                let perpetual = lic.is_perpetual();
                 return Ok(ActivationStatus {
                     activated: true,
                     plan: Some(lic.plan),
                     device_id,
+                    activated_at: Some(lic.activated_at),
+                    expiry: Some(lic.expiry),
+                    perpetual,
                 });
             }
         }
@@ -47,29 +57,43 @@ pub async fn check_activation(state: State<'_, AppState>) -> CmdResult<Activatio
         activated: false,
         plan: None,
         device_id,
+        activated_at: None,
+        expiry: None,
+        perpetual: false,
     })
 }
 
 #[tauri::command]
 pub async fn activate(state: State<'_, AppState>, license_blob: String) -> CmdResult<bool> {
     let device_id = fingerprint::device_id()?;
-    let lic = License::from_blob(&license_blob)
-        .map_err(|e| crate::error::AppError {
-            code: "ACTIVATION".into(),
-            message: format!("许可证解析失败: {}", e),
-        })?;
+    let lic = License::from_blob(&license_blob).map_err(|e| crate::error::AppError {
+        code: "ACTIVATION".into(),
+        message: format!("许可证解析失败: {}", e),
+    })?;
     lic.verify(&device_id).map_err(|e| crate::error::AppError {
         code: "ACTIVATION".into(),
         message: e.to_string(),
     })?;
 
-    state.db.with_conn(|conn| {
+    persist_license(&state.db, &device_id, &license_blob, &lic)?;
+    tracing::info!("设备 {} 已通过离线许可证激活", device_id);
+    Ok(true)
+}
+
+/// 把许可证写进本地库。卡密兑换和离线粘贴两条路径共用。
+pub(crate) fn persist_license(
+    db: &Database,
+    device_id: &str,
+    blob: &str,
+    lic: &License,
+) -> CmdResult<()> {
+    db.with_conn(|conn| {
         conn.execute(
             "INSERT OR REPLACE INTO activations (device_id, license_blob, activated_at, signature, app_version) \
              VALUES (?,?,?,?,?)",
             params![
                 device_id,
-                license_blob,
+                blob,
                 lic.activated_at,
                 lic.signature,
                 env!("CARGO_PKG_VERSION")
@@ -77,14 +101,13 @@ pub async fn activate(state: State<'_, AppState>, license_blob: String) -> CmdRe
         )?;
         Ok(())
     })?;
-    tracing::info!("设备 {} 已激活", device_id);
-    Ok(true)
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn get_donation_qrcode() -> CmdResult<qrcode::DonationQrCode> {
+pub async fn get_purchase_info() -> CmdResult<purchase::PurchaseInfo> {
     let device_id = fingerprint::device_id()?;
-    Ok(qrcode::donation_qrcode(&device_id)?)
+    Ok(purchase::purchase_info(&device_id)?)
 }
 
 #[tauri::command]

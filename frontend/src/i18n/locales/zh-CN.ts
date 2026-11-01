@@ -38,8 +38,8 @@ export default {
     pages: '页',
   },
   activation: {
-    title: '捐赠激活',
-    desc: '微信扫码捐赠 1 元即可激活全部功能,无会员分级、无订阅费',
+    title: '激活',
+    desc: '1 元买断，永久使用全部功能，无会员分级、无订阅费',
     deviceId: '设备指纹',
     qrCode: '微信收款码',
     licenseInput: '许可证',

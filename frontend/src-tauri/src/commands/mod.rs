@@ -1,6 +1,7 @@
 //! Tauri 命令分组
 
 pub mod document_commands;
+pub mod license_commands;
 pub mod ocr_commands;
 pub mod office_commands;
 pub mod pdf_commands;

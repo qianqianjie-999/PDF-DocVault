@@ -3,7 +3,7 @@
 
 [workspace]
 resolver = "2"
-members = ["core", "frontend/src-tauri", "tests/rust"]
+members = ["core", "frontend/src-tauri", "tests/rust", "tools/license-gen"]
 
 [workspace.package]
 version = "0.1.0"
@@ -59,6 +59,8 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-os = "2"
+# HTTP 客户端(卡密兑换;rustls 避免依赖系统 OpenSSL)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [profile.release]
 opt-level = 3

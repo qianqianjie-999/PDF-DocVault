@@ -32,6 +32,7 @@ rusqlite = { workspace = true }
 chrono = { workspace = true }
 lopdf = { workspace = true }
 image = { workspace = true }
+reqwest = { workspace = true }
 
 [features]
 # 默认启用自定义协议
