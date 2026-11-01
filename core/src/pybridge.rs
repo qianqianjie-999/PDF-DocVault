@@ -89,7 +89,9 @@ pub(crate) fn parse_response(stdout: &str) -> Option<PyResponse> {
 // ===== Python 解释器探测 =====
 
 /// 依序探测:环境变量 `PYCORE_PYTHON` → `pycore/.venv/bin/python` → PATH 中的 python3。
-pub(crate) fn resolve_python(pycore_dir: &Path) -> Result<PathBuf> {
+///
+/// 公开导出以便集成测试与诊断工具按同一规则定位解释器。
+pub fn resolve_python(pycore_dir: &Path) -> Result<PathBuf> {
     let main_py = pycore_dir.join("main.py");
     if !main_py.is_file() {
         return Err(CoreError::Ocr(format!("未找到 pycore 入口: {}", main_py.display())));
@@ -155,17 +157,30 @@ pub fn resolve_pycore_dir() -> Result<PathBuf> {
 ///
 /// 回调为 None 时等价于普通执行(读线程在进程退出/被杀后因 EOF 返回,
 /// 避免管道死锁);超时 kill 进程。
+///
+/// `stdin_payload` 为 Some 时把内容写入子进程 stdin 并关闭管道。
+/// 用于传递密码这类不能进命令行参数的敏感值。
 pub(crate) fn spawn_with_timeout_watched(
     mut cmd: Command,
     timeout_secs: u64,
+    stdin_payload: Option<String>,
     on_stderr_line: Option<Box<dyn FnMut(&str) + Send>>,
 ) -> Result<(std::process::ExitStatus, String, String)> {
-    use std::io::{BufRead, BufReader};
+    use std::io::{BufRead, BufReader, Write};
     use std::thread;
 
     let mut child = cmd
         .spawn()
         .map_err(|e| CoreError::Ocr(format!("无法启动 Python 进程: {e}")))?;
+
+    if let Some(payload) = stdin_payload {
+        if let Some(mut sin) = child.stdin.take() {
+            // 写失败多半是子进程提前退出(参数非法等),错误留给退出码与 stdout 判定,
+            // 这里不抢先行报错,避免掩盖真正的失败原因。
+            let _ = sin.write_all(payload.as_bytes());
+            // sin 在此作用域结束被 drop → 关闭管道,子进程读到 EOF
+        }
+    }
 
     let mut out_pipe = child.stdout.take().expect("stdout 已设为 piped");
     let err_pipe = child.stderr.take().expect("stderr 已设为 piped");
@@ -237,7 +252,38 @@ pub(crate) fn run_pycore(
     timeout_secs: u64,
     cleanup: impl Fn(),
 ) -> Result<PyResponse> {
-    run_pycore_inner(pycore_dir, subcommand, input_args, timeout_secs, cleanup, None)
+    run_pycore_inner(
+        pycore_dir,
+        subcommand,
+        input_args,
+        timeout_secs,
+        cleanup,
+        None,
+        None,
+    )
+}
+
+/// 与 [`run_pycore`] 相同,但把 `stdin_payload` 写进子进程 stdin。
+///
+/// 用于传递密码:命令行参数对同用户的其他进程可见(`/proc/<pid>/cmdline`),
+/// 而 stdin 走管道,进程结束后不留痕。payload 约定为一整行 JSON。
+pub(crate) fn run_pycore_stdin(
+    pycore_dir: &Path,
+    subcommand: &str,
+    input_args: impl IntoIterator<Item = (String, String)>,
+    stdin_payload: String,
+    timeout_secs: u64,
+    cleanup: impl Fn(),
+) -> Result<PyResponse> {
+    run_pycore_inner(
+        pycore_dir,
+        subcommand,
+        input_args,
+        timeout_secs,
+        cleanup,
+        Some(stdin_payload),
+        None,
+    )
 }
 
 /// 与 [`run_pycore`] 相同,但 stderr 每行实时回调(批量任务进度)。
@@ -255,6 +301,7 @@ pub(crate) fn run_pycore_watched(
         input_args,
         timeout_secs,
         cleanup,
+        None,
         Some(on_stderr_line),
     )
 }
@@ -265,6 +312,7 @@ fn run_pycore_inner(
     input_args: impl IntoIterator<Item = (String, String)>,
     timeout_secs: u64,
     cleanup: impl Fn(),
+    stdin_payload: Option<String>,
     on_stderr_line: Option<Box<dyn FnMut(&str) + Send>>,
 ) -> Result<PyResponse> {
     let python = resolve_python(pycore_dir)?;
@@ -273,13 +321,17 @@ fn run_pycore_inner(
         .arg(subcommand)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .stdin(Stdio::null());
+        .stdin(if stdin_payload.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        });
     for (k, v) in input_args {
         cmd.arg(format!("--{k}")).arg(v);
     }
 
     let (status, stdout, stderr) =
-        match spawn_with_timeout_watched(cmd, timeout_secs, on_stderr_line) {
+        match spawn_with_timeout_watched(cmd, timeout_secs, stdin_payload, on_stderr_line) {
             Ok(r) => r,
             Err(e) => {
                 cleanup();

@@ -29,13 +29,13 @@ PDF-DocVault 是一款面向个人和企业的桌面端智能文档处理工具,
 | PDF 合并 | ✅ | 多文件合并 |
 | PDF 拆分 | ✅ | 按范围/每 N 页 |
 | 页面操作 | ✅ | 旋转/删除/插入/提取/重排 |
-| PDF 加密 | ✅ | AES-256(qpdf) |
+| PDF 加密 | ✅ | AES-256/128 + 权限位（pikepdf，内置 libqpdf，无需外部二进制） |
 | PDF 水印 | ✅ | 文字/图片 |
-| PDF 压缩 | ✅ | 无损 Flate |
+| PDF 压缩 | ✅ | 无损结构压缩 + 有损分级（level 1–9） |
 | 转图片 | ✅ | PNG/JPG/WebP(pdfium) |
 | 文档扫描 | ✅ | 纯 Rust:边界检测/透视矫正/去阴影/黑白扫描/多图合成 PDF |
 | 文档管理 | ✅ | 列表/标签/删除 |
-| 捐赠激活 | ✅ | 1 元扫码激活 |
+| 卡密激活 | ✅ | 卡密兑换 → 离线验签，永久授权 |
 | OCR/扫描识别 | ⏳ | 规划中(Python/PaddleOCR) |
 
 ## 快速开始
@@ -44,7 +44,7 @@ PDF-DocVault 是一款面向个人和企业的桌面端智能文档处理工具,
 
 - Node.js 22+ / pnpm 10+
 - Rust 1.94+ (stable)
-- Linux(Ubuntu):`libwebkit2gtk-4.1-dev`、`libgtk-3-dev`、`librsvg2-dev`、`libxdo-dev`、`libayatana-appindicator3-dev`、`qpdf`
+- Linux(Ubuntu):`libwebkit2gtk-4.1-dev`、`libgtk-3-dev`、`librsvg2-dev`、`libxdo-dev`、`libayatana-appindicator3-dev`
 - Linux(Fedora):`webkit2gtk4.1-devel`、`gtk3-devel`、`librsvg2-devel`、`libxdo-dev`、`libayatana-appindicator3-devel`
 - 推荐使用 Distrobox 容器隔离环境:见 [scripts/tauri-distrobox-setup.sh](scripts/tauri-distrobox-setup.sh)
 

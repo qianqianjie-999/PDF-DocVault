@@ -8,5 +8,5 @@ fixture 不提交二进制样本,测试运行时由 `common/mod.rs` 动态生成
 cargo test -p pdf-docvault-tests
 
 # 渲染测试需要 pdfium(开发环境默认探测 frontend/src-tauri/resources/pdfium/lib)
-# 加密测试需要系统 qpdf,缺失时自动跳过
+# 加密测试需要 pycore 的 venv 内可 import pikepdf,缺失时自动跳过
 ```

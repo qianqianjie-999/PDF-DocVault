@@ -8,6 +8,9 @@ import type {
   PageCountOutput,
   SplitMode,
   EncryptOptions,
+  EncryptReport,
+  DecryptReport,
+  EncryptionInfo,
   WatermarkOptions,
 } from '@/types/pdf'
 
@@ -43,10 +46,14 @@ export const pdfApi = {
     }),
 
   encrypt: (input: string, output: string, options: EncryptOptions) =>
-    call<string>('encrypt_pdf', { input: { input, output, options } }),
+    call<EncryptReport>('encrypt_pdf', { input: { input, output, options } }),
 
   decrypt: (input: string, output: string, password: string) =>
-    call<string>('decrypt_pdf', { input: { input, output, password } }),
+    call<DecryptReport>('decrypt_pdf', { input: { input, output, password } }),
+
+  /** 探测加密状态:决定界面显示「加密」还是「解密」 */
+  probeEncryption: (input: string, password = '') =>
+    call<EncryptionInfo>('probe_pdf_encryption', { input: { input, password } }),
 
   watermark: (
     input: string,

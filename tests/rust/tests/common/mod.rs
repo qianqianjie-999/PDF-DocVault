@@ -64,10 +64,20 @@ pub fn ensure_pdfium() -> bool {
     false
 }
 
-/// 探测系统 qpdf(加密/解密测试用),缺失时调用方跳过。
-pub fn qpdf_available() -> bool {
-    std::process::Command::new("qpdf")
-        .arg("--version")
+/// 探测加密/解密链路可用性:pycore 可定位 且 其解释器能 import pikepdf。
+///
+/// 不再探测系统 `qpdf` —— 加密已改为经 pycore 调 pikepdf(静态链接 libqpdf),
+/// 用户机无需安装任何外部二进制。
+pub fn pycrypt_available() -> bool {
+    let Ok(dir) = pdf_docvault_core::pybridge::resolve_pycore_dir() else {
+        return false;
+    };
+    let Ok(python) = pdf_docvault_core::pybridge::resolve_python(&dir) else {
+        return false;
+    };
+    std::process::Command::new(python)
+        .arg("-c")
+        .arg("import pikepdf")
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)

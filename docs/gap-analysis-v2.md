@@ -28,9 +28,9 @@
 | 2 | **全文搜索（Tantivy）** | Tantivy 做本地全文检索 | 零代码，仅 UI 文案「待集成 Tantivy」 | ❌ 未开始 | 8～12 人日 | **P1** |
 | 3 | **PDF 处理引擎** | PyMuPDF（fitz）为 PDF 处理核心 | lopdf 0.34 + pdfium-render 0.9 + pycore pikepdf | ⚠️ 选型不一致 | 见 §3 | P2 |
 | 4 | PDF 合并/拆分/页面操作 | 全功能 | 合并/拆分/旋转/删除/插入/提取/重排 均 ✅ | ✅ 已达成 | 0 | — |
-| 5 | PDF 加密 | AES-256 | 委托外部 qpdf 二进制（**未随包分发**，externalBin 为空） | 🟡 部分达成 | 2～3 人日 | P1 |
+| 5 | PDF 加密 | AES-256 | AES-256/128 + 权限位，经 pycore 调 pikepdf（静态链接 libqpdf，无需外部二进制） | ✅ 已达成 | 0 | — |
 | 6 | PDF 水印 | 文字/图片 | 文字 ✅，图片 ⏳（接口有，未验证完成度） | 🟡 部分达成 | 1 人日 | P2 |
-| 7 | PDF 压缩 | 有损+无损多级 | 仅无损 Flate；`level` 参数为占位 | 🟡 部分达成 | 3～4 人日 | P1 |
+| 7 | PDF 压缩 | 有损+无损多级 | 无损结构压缩 + level 4–9 图片重编码（Lanczos3 + JPEG 降质） | ✅ 已达成 | 0 | — |
 | 8 | 文档扫描增强 | 去阴影/二值化/透视矫正 | ✅ 纯 Rust 实现（enhance.rs 1703 行）+ 去手写 | ✅ 已达成 | 0 | — |
 | 9 | 证件扫描排版 | 身份证/护照排版 | ✅（image + ab_glyph 栅格化标签） | ✅ 已达成 | 0 | — |
 | 10 | OCR 文字识别 | 多引擎 OCR + 转 docx/xlsx | ✅ rapidocr→onnx→paddle 三级；转 docx/xlsx ✅ | ✅ 已达成 | 0 | — |
@@ -101,8 +101,7 @@
 |---|---|---|
 | PyMuPDF（fitz） | **lopdf 0.34** | 读写/合并/拆分/页面操作/水印 |
 | PyMuPDF（fitz） | **pdfium-render 0.9** | PDF → 图片渲染 |
-| PyMuPDF（fitz） | **pycore pikepdf** | Word→PDF 质量后处理 |
-| — | qpdf（外部二进制） | AES-256 加密写入 |
+| PyMuPDF（fitz） | **pycore pikepdf** | Word→PDF 质量后处理、PDF 加密/解密写入 |
 
 规划把 PDF 处理统一到 PyMuPDF（Python 侧），实际却做成了 **Rust 侧 lopdf + pdfium** 的双引擎，Python 侧只用 pikepdf 做边角。
 
@@ -111,7 +110,7 @@
 **若真按规划迁到 PyMuPDF：**
 - ❌ 与「Rust 核心 + 高性能」定位冲突：PDF 主链路要下沉到 Python 子进程，Rust→Python 进程桥（`pybridge.rs` 单任务 stdout JSON 协议）会变成**性能瓶颈**（每次操作 spawn 进程 + JSON 序列化）。
 - ❌ 已有 5141 行 core Rust 代码 + 完整测试/基准（`benches/pdf_ops.rs`）需重写或废弃。
-- ❌ 加密现状依赖外部 qpdf，迁 PyMuPDF 虽可原生写加密，但需重做整套权限位逻辑。
+- ⚠️ 加密与 Word→PDF 质量后处理已经落在 Python 侧（pikepdf），但只是窄接口调用，主链路仍在 Rust。迁 PyMuPDF 会把这两条窄接口换成整条 PDF 主链路。
 - ✅ 唯一收益：PDF 语义 API 更高级（文本提取、注释、表单），且能顺带满足规划「统一引擎」的字面要求。
 
 **保留现状：**

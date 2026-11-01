@@ -238,32 +238,56 @@ pub struct DecryptInput {
     pub password: String,
 }
 
-#[tauri::command]
-pub async fn encrypt_pdf(input: EncryptInput) -> CmdResult<PathBuf> {
-    let inp = input.input.clone();
-    let out = input.output.clone();
-    let opts = input.options.clone();
-    tokio::task::spawn_blocking(move || pdf::encrypt::encrypt_aes256(&inp, &out, &opts))
-        .await
-        .map_err(|e| crate::error::AppError {
-            code: "JOIN".into(),
-            message: e.to_string(),
-        })??;
-    Ok(input.output)
+#[derive(Deserialize)]
+pub struct EncryptionInfoInput {
+    pub input: PathBuf,
+    #[serde(default)]
+    pub password: String,
 }
 
 #[tauri::command]
-pub async fn decrypt_pdf(input: DecryptInput) -> CmdResult<PathBuf> {
+pub async fn encrypt_pdf(input: EncryptInput) -> CmdResult<pdf::EncryptReport> {
+    let inp = input.input.clone();
+    let out = input.output.clone();
+    let opts = input.options.clone();
+    Ok(
+        tokio::task::spawn_blocking(move || pdf::encrypt::encrypt_aes256(&inp, &out, &opts))
+            .await
+            .map_err(|e| crate::error::AppError {
+                code: "JOIN".into(),
+                message: e.to_string(),
+            })??,
+    )
+}
+
+#[tauri::command]
+pub async fn decrypt_pdf(input: DecryptInput) -> CmdResult<pdf::DecryptReport> {
     let inp = input.input.clone();
     let out = input.output.clone();
     let pw = input.password.clone();
-    tokio::task::spawn_blocking(move || pdf::encrypt::decrypt(&inp, &out, &pw))
-        .await
-        .map_err(|e| crate::error::AppError {
-            code: "JOIN".into(),
-            message: e.to_string(),
-        })??;
-    Ok(input.output)
+    Ok(
+        tokio::task::spawn_blocking(move || pdf::encrypt::decrypt(&inp, &out, &pw))
+            .await
+            .map_err(|e| crate::error::AppError {
+                code: "JOIN".into(),
+                message: e.to_string(),
+            })??,
+    )
+}
+
+/// 探测 PDF 是否加密 / 是否需要密码,供界面决定显示「加密」还是「解密」
+#[tauri::command]
+pub async fn probe_pdf_encryption(input: EncryptionInfoInput) -> CmdResult<pdf::EncryptionInfo> {
+    let inp = input.input.clone();
+    let pw = input.password.clone();
+    Ok(
+        tokio::task::spawn_blocking(move || pdf::encrypt::probe_encryption(&inp, &pw))
+            .await
+            .map_err(|e| crate::error::AppError {
+                code: "JOIN".into(),
+                message: e.to_string(),
+            })??,
+    )
 }
 
 // ===== 水印 =====

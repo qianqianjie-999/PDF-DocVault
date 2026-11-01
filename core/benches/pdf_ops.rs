@@ -98,18 +98,10 @@ fn bench_split(c: &mut Criterion) {
     );
 }
 
-/// 简易 PATH 探测(避免仅为 bench 引入 which 依赖)
-fn has_bin(name: &str) -> bool {
-    std::env::var("PATH")
-        .map(|paths| {
-            std::env::split_paths(&paths).any(|dir| dir.join(name).is_file())
-        })
-        .unwrap_or(false)
-}
-
 fn bench_encrypt(c: &mut Criterion) {
-    if !has_bin("qpdf") {
-        return; // 无 qpdf 则跳过
+    // 加密走 pycore(pikepdf),解释器子进程必须可定位
+    if pdf_docvault_core::pybridge::resolve_pycore_dir().is_err() {
+        return;
     }
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("src-50p.pdf");
@@ -126,9 +118,7 @@ fn bench_encrypt(c: &mut Criterion) {
                     output,
                     &pdf::encrypt::EncryptOptions {
                         user_password: "test".into(),
-                        owner_password: None,
-                        permissions: pdf::encrypt::Permissions::default(),
-                        bits: 256,
+                        ..Default::default()
                     },
                 )
                 .unwrap();

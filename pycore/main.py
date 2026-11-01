@@ -142,6 +142,72 @@ def cmd_remove_handwriting(args: argparse.Namespace) -> dict:
     }
 
 
+def _read_secrets() -> dict:
+    """从 stdin 读一行 JSON 密钥。
+
+    密码不进命令行参数:同用户的其他进程能读 `/proc/<pid>/cmdline`,
+    而 stdin 写在管道里,进程退出即消失,也不落盘。
+    """
+    raw = sys.stdin.read()
+    if not raw.strip():
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise OcrError("INVALID_ARGUMENT", f"stdin 密钥格式非法(应为 JSON): {e}") from None
+    if not isinstance(data, dict):
+        raise OcrError("INVALID_ARGUMENT", "stdin 密钥必须是 JSON 对象")
+    return data
+
+
+def cmd_encrypt_pdf(args: argparse.Namespace) -> dict:
+    """AES 加密(默认 AES-256)。密码与权限经 stdin 传入。"""
+    from pdfcrypt import CryptError, encrypt_file
+
+    secrets = _read_secrets()
+    try:
+        report = encrypt_file(
+            input_path=args.input,
+            output_path=args.output,
+            user_password=secrets.get("user_password", ""),
+            owner_password=secrets.get("owner_password", ""),
+            bits=args.bits,
+            permissions=secrets.get("permissions", {}),
+            input_password=secrets.get("input_password", ""),
+        )
+    except CryptError as e:
+        raise OcrError(e.code, e.message) from None
+    return {"ok": True, "report": report}
+
+
+def cmd_decrypt_pdf(args: argparse.Namespace) -> dict:
+    """解密:去掉加密与权限限制。密码经 stdin 传入。"""
+    from pdfcrypt import CryptError, decrypt_file
+
+    secrets = _read_secrets()
+    try:
+        report = decrypt_file(
+            input_path=args.input,
+            output_path=args.output,
+            password=secrets.get("password", ""),
+        )
+    except CryptError as e:
+        raise OcrError(e.code, e.message) from None
+    return {"ok": True, "report": report}
+
+
+def cmd_pdf_encryption_info(args: argparse.Namespace) -> dict:
+    """探测是否加密/是否需要密码,供界面决定「加密」还是「解密」。"""
+    from pdfcrypt import CryptError, probe_encryption
+
+    secrets = _read_secrets()
+    try:
+        report = probe_encryption(args.input, secrets.get("password", ""))
+    except CryptError as e:
+        raise OcrError(e.code, e.message) from None
+    return {"ok": True, "report": report}
+
+
 def cmd_word_to_pdf(args: argparse.Namespace) -> dict:
     """批量 Word(.doc/.docx)转 PDF,详见 office/word_to_pdf.py。"""
     from office.word_to_pdf import convert_batch
@@ -200,6 +266,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_office = sub.add_parser("office_selftest", help="Word→PDF 引擎自检")
     p_office.set_defaults(func=cmd_office_selftest)
+
+    p_enc = sub.add_parser("encrypt_pdf", help="PDF AES 加密(密码经 stdin 传入)")
+    p_enc.add_argument("--input", required=True, help="源 PDF 路径")
+    p_enc.add_argument("--output", required=True, help="输出 PDF 路径")
+    p_enc.add_argument("--bits", type=int, default=256, choices=[128, 256], help="密钥位数")
+    p_enc.set_defaults(func=cmd_encrypt_pdf)
+
+    p_dec = sub.add_parser("decrypt_pdf", help="PDF 解密(密码经 stdin 传入)")
+    p_dec.add_argument("--input", required=True, help="源 PDF 路径")
+    p_dec.add_argument("--output", required=True, help="输出 PDF 路径")
+    p_dec.set_defaults(func=cmd_decrypt_pdf)
+
+    p_info = sub.add_parser("pdf_encryption_info", help="探测 PDF 加密状态")
+    p_info.add_argument("--input", required=True, help="PDF 路径")
+    p_info.set_defaults(func=cmd_pdf_encryption_info)
 
     p_w2p = sub.add_parser("word_to_pdf", help="批量 Word 转 PDF")
     p_w2p.add_argument("--input", action="append", required=True, help="Word 路径,可重复传多个")

@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, reactive, watch } from 'vue'
 import { save } from '@tauri-apps/plugin-dialog'
 import { ElMessage } from 'element-plus'
 import { pdfApi } from '@/api/pdf'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/task'
-import { basename, dirname, joinPath } from '@/utils/file'
+import { basename, dirname, formatFileSize, joinPath } from '@/utils/file'
 import { openOutput } from '@/utils/openOutput'
 import ProgressOverlay from './ProgressOverlay.vue'
-import type { SplitMode } from '@/types/pdf'
+import type { EncryptionInfo, SplitMode } from '@/types/pdf'
 
 const filesStore = useFilesStore()
 const taskStore = useTaskStore()
@@ -53,7 +53,31 @@ const rotateDegrees = ref(90)
 const pageInput = ref('') // 旋转/删除/提取通用页码输入
 const encryptPassword = ref('')
 const encryptBits = ref(256)
+// 权限默认:允许打印,禁止复制/修改/批注(文档保护场景的常见预期)
+const encryptPermissions = reactive({
+  allow_print: true,
+  allow_copy: false,
+  allow_modify: false,
+  allow_annotate: false,
+})
 const decryptPassword = ref('')
+const encryptProbe = ref<EncryptionInfo | null>(null)
+
+// 切到加密面板/换文件时探测一次:已加密的文件直接提示先解密,
+// 否则用户点加密会收到一句摸不着头脑的「密码错误」。
+watch(
+  () => [op.value, filesStore.selectedFiles[0]?.path] as const,
+  async () => {
+    encryptProbe.value = null
+    if (op.value !== 'encrypt' || filesStore.selectedFiles.length !== 1) return
+    try {
+      encryptProbe.value = await pdfApi.probeEncryption(filesStore.selectedFiles[0].path)
+    } catch {
+      encryptProbe.value = null // 探测失败不打扰用户,真正加密时再报错
+    }
+  },
+  { immediate: true },
+)
 const watermarkText = ref('PDF-DocVault')
 const watermarkFontSize = ref(48)
 const watermarkOpacity = ref(0.3)
@@ -182,25 +206,45 @@ async function run() {
         break
       }
       case 'encrypt': {
+        const pw = encryptPassword.value.trim()
+        if (!pw) {
+          ElMessage.warning('请先设置打开密码')
+          break
+        }
+        // AES-128(R4) 的密码受 PDFDocEncoding 限制,含中文会直接失败
+        if (encryptBits.value === 128 && /[^\x00-\x7F]/.test(pw)) {
+          ElMessage.warning('AES-128 不支持中文密码,请改用 AES-256')
+          break
+        }
         const first = files[0].path
         const out = await pickOutput(`encrypted-${basename(first)}`)
         if (!out) break
-        await pdfApi.encrypt(first, out, {
-          user_password: encryptPassword.value,
+        const rep = await pdfApi.encrypt(first, out, {
+          user_password: pw,
           owner_password: null,
-          permissions: { allow_print: true, allow_copy: true, allow_modify: false, allow_annotate: false },
+          permissions: { ...encryptPermissions },
           bits: encryptBits.value,
         })
-        ElMessage.success('加密完成')
+        ElMessage.success(
+          `加密完成:${rep.pages} 页 · AES-${rep.bits}(R${rep.revision}) · ${formatFileSize(rep.size)}`,
+        )
         openOutput({ output: out })
         break
       }
       case 'decrypt': {
+        if (!decryptPassword.value) {
+          ElMessage.warning('请输入该 PDF 的打开密码')
+          break
+        }
         const first = files[0].path
         const out = await pickOutput(`decrypted-${basename(first)}`)
         if (!out) break
-        await pdfApi.decrypt(first, out, decryptPassword.value)
-        ElMessage.success('解密完成')
+        const rep = await pdfApi.decrypt(first, out, decryptPassword.value)
+        ElMessage.success(
+          rep.was_encrypted
+            ? `解密完成:${rep.pages} 页 · ${formatFileSize(rep.size)}`
+            : `该文件本来就没有加密,已原样另存:${rep.pages} 页`,
+        )
         openOutput({ output: out })
         break
       }
@@ -342,14 +386,34 @@ async function run() {
 
       <!-- 加密 -->
       <el-form v-else-if="op === 'encrypt'" label-width="100px" label-position="left">
+        <el-alert
+          v-if="encryptProbe?.encrypted"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="该文件已加密"
+          description="请先在「解密」中去除原有加密,再设置新密码"
+          class="form-alert"
+        />
         <el-form-item label="密码">
-          <el-input v-model="encryptPassword" type="password" show-password />
+          <el-input v-model="encryptPassword" type="password" show-password placeholder="打开文档时需要输入" />
         </el-form-item>
         <el-form-item label="加密位数">
           <el-radio-group v-model="encryptBits">
-            <el-radio :value="128">128-bit</el-radio>
+            <el-radio :value="128">128-bit AES</el-radio>
             <el-radio :value="256">256-bit AES</el-radio>
           </el-radio-group>
+        </el-form-item>
+        <el-form-item label="权限">
+          <div class="perm-grid">
+            <el-checkbox v-model="encryptPermissions.allow_print">允许打印</el-checkbox>
+            <el-checkbox v-model="encryptPermissions.allow_copy">允许复制文本</el-checkbox>
+            <el-checkbox v-model="encryptPermissions.allow_modify">允许修改内容</el-checkbox>
+            <el-checkbox v-model="encryptPermissions.allow_annotate">允许批注</el-checkbox>
+          </div>
+        </el-form-item>
+        <el-form-item v-if="encryptBits === 128">
+          <div class="hint">AES-128 仅支持字母数字密码;需要中文密码请选 AES-256</div>
         </el-form-item>
       </el-form>
 
@@ -483,6 +547,14 @@ async function run() {
 .hint {
   font-size: 12px;
   color: $text-secondary;
+}
+.perm-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 12px;
+}
+.form-alert {
+  margin-bottom: 12px;
 }
 .compress-hint {
   font-size: 12px;

@@ -1,7 +1,7 @@
 //! PDF 处理模块
 //!
 //! 基于 `lopdf`(读写/合并/拆分/页面操作/水印)与 `pdfium-render`(转图片)实现。
-//! 加密因 lopdf 0.34 不支持写入,委托给系统 `qpdf` 二进制。
+//! 加密因 lopdf 不支持写入,经 pycore 委托 pikepdf(静态链接 libqpdf),不依赖系统 qpdf。
 
 pub mod compress;
 pub mod encrypt;
@@ -15,7 +15,8 @@ pub use merge::{merge, MergeStats};
 pub use split::{split, PageRange, SplitMode, SplitStats};
 pub use pages::{delete_pages, extract_pages, insert_pages, reorder_pages, rotate_pages};
 pub use encrypt::{
-    decrypt, encrypt_aes256, EncryptOptions, Permissions,
+    decrypt, encrypt_aes256, probe_encryption, DecryptReport, EncryptOptions, EncryptReport,
+    EncryptionInfo, PermissionReport, Permissions,
 };
 pub use watermark::{add_image_watermark, add_text_watermark, WatermarkOptions};
 pub use compress::{compress, CompressStats};

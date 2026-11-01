@@ -57,6 +57,8 @@ export interface EncryptOptions {
   owner_password: string | null
   permissions: Permissions
   bits: number
+  /** 源文件本身已加密时的打开密码 */
+  input_password?: string | null
 }
 
 export interface Permissions {
@@ -64,6 +66,33 @@ export interface Permissions {
   allow_copy: boolean
   allow_modify: boolean
   allow_annotate: boolean
+}
+
+/** 加密结果:页数 / 算法修订号 / 落盘体积,以及服务端回读到的权限位 */
+export interface EncryptReport {
+  output: string
+  pages: number
+  bits: number
+  /** R6 = AES-256,R4 = AES-128 */
+  revision: number
+  was_encrypted: boolean
+  size: number
+  permissions: Permissions
+}
+
+export interface DecryptReport {
+  output: string
+  pages: number
+  was_encrypted: boolean
+  size: number
+}
+
+export interface EncryptionInfo {
+  encrypted: boolean
+  /** 需要密码才能读(未给密码或密码错误) */
+  locked: boolean
+  pages: number
+  permissions: Permissions
 }
 
 export interface WatermarkOptions {

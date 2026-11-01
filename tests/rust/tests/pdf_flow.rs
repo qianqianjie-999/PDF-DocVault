@@ -1,15 +1,16 @@
 //! PDF 全流程集成测试:merge → split → pages → watermark → compress → 加密 → 渲染。
 //!
 //! 覆盖规划书阶段 I 要求:合并后页数正确、拆分后可重新 load、
-//! 旋转后 /Rotate 正确、加密后 qpdf 可解密。
-//! 外部依赖缺失(pdfium/qpdf)时对应测试自动跳过。
+//! 旋转后 /Rotate 正确、加密后能解密回原页数。
+//! 外部依赖缺失(pdfium / pycore-pikepdf)时对应测试自动跳过。
 
 mod common;
 
-use common::{ensure_pdfium, make_pdf, page_count, qpdf_available};
+use common::{ensure_pdfium, make_pdf, page_count, pycrypt_available};
 use pdf_docvault_core::pdf::{
-    add_text_watermark, compress, delete_pages, encrypt_aes256, extract_pages, insert_pages,
-    merge, decrypt, reorder_pages, rotate_pages, split, EncryptOptions, SplitMode, WatermarkOptions,
+    add_text_watermark, compress, decrypt, delete_pages, encrypt_aes256, extract_pages,
+    insert_pages, merge, probe_encryption, reorder_pages, rotate_pages, split, EncryptOptions,
+    Permissions, SplitMode, WatermarkOptions,
 };
 use std::path::Path;
 
@@ -142,13 +143,59 @@ fn compress_reloads() {
     assert_eq!(page_count(&out), 2);
 }
 
-// ===== 加密(qpdf) =====
+// ===== 加密/解密(pikepdf) =====
 
-/// AES-256 加密后 qpdf 解密回原页数(规划书验证点)
+/// AES-256 加密:无密码打不开、正确密码可读、页数不变、权限位真的落盘
 #[test]
-fn encrypt_then_decrypt_roundtrip() {
-    if !qpdf_available() {
-        eprintln!("跳过:系统未安装 qpdf");
+fn encrypt_aes256_locks_and_applies_permissions() {
+    if !pycrypt_available() {
+        eprintln!("跳过:pycore/pikepdf 不可用");
+        return;
+    }
+    let src = make_pdf(3);
+    let enc = src.parent().unwrap().join("encrypted.pdf");
+
+    let report = encrypt_aes256(
+        &src,
+        &enc,
+        &EncryptOptions {
+            user_password: "测试密码".into(),
+            owner_password: Some("owner-pw".into()),
+            permissions: Permissions {
+                allow_print: true,
+                allow_copy: false,
+                allow_modify: false,
+                allow_annotate: false,
+            },
+            bits: 256,
+            input_password: None,
+        },
+    )
+    .expect("加密应成功");
+
+    assert!(Path::new(&enc).is_file(), "输出文件应存在");
+    assert_eq!(report.revision, 6, "AES-256 对应 PDF 加密修订号 R6");
+    assert_eq!(report.pages, 3, "加密不应改变页数");
+    assert!(!report.permissions.allow_copy, "复制权限应确实被禁止");
+
+    // 无密码 → 锁死
+    let locked = probe_encryption(&enc, "").expect("探测应成功");
+    assert!(locked.encrypted, "输出应被标记为已加密");
+    assert!(locked.locked, "不给密码必须读不到内容");
+
+    // 正确密码 → 可读,页数与权限位一致
+    let opened = probe_encryption(&enc, "测试密码").expect("探测应成功");
+    assert!(!opened.locked, "正确密码应能打开");
+    assert_eq!(opened.pages, 3);
+    assert!(!opened.permissions.allow_copy);
+    assert!(opened.permissions.allow_print);
+}
+
+/// 解密回原页数,且输出不再需要密码
+#[test]
+fn decrypt_restores_plaintext() {
+    if !pycrypt_available() {
+        eprintln!("跳过:pycore/pikepdf 不可用");
         return;
     }
     let src = make_pdf(3);
@@ -165,11 +212,41 @@ fn encrypt_then_decrypt_roundtrip() {
         },
     )
     .expect("加密应成功");
-    assert!(Path::new(&enc).is_file());
 
-    // 加密后的文件无法用 lopdf 直接打开(已加密),验证方式:qpdf 解密回明文
-    decrypt(&enc, &dec, "测试密码").expect("解密应成功");
+    let report = decrypt(&enc, &dec, "测试密码").expect("解密应成功");
+    assert!(report.was_encrypted, "源文件应确实是加密的");
     assert_eq!(page_count(&dec), 3, "解密后页数应与原文一致");
+
+    let plain = probe_encryption(&dec, "").expect("探测应成功");
+    assert!(!plain.encrypted, "解密后不应残留加密");
+    assert!(!plain.locked);
+}
+
+/// 错误密码必须被明确拒绝,且不留下半成品文件
+#[test]
+fn decrypt_with_wrong_password_fails_cleanly() {
+    if !pycrypt_available() {
+        eprintln!("跳过:pycore/pikepdf 不可用");
+        return;
+    }
+    let src = make_pdf(2);
+    let enc = src.parent().unwrap().join("encrypted.pdf");
+    let dec = src.parent().unwrap().join("wrong-dec.pdf");
+
+    encrypt_aes256(
+        &src,
+        &enc,
+        &EncryptOptions {
+            user_password: "right-pw".into(),
+            ..Default::default()
+        },
+    )
+    .expect("加密应成功");
+
+    let err = decrypt(&enc, &dec, "wrong-pw").expect_err("错误密码必须失败");
+    let msg = format!("{err}");
+    assert!(msg.contains("密码"), "错误信息应指向密码问题,实际: {msg}");
+    assert!(!Path::new(&dec).exists(), "失败时不应留下输出文件");
 }
 
 // ===== 渲染(pdfium) =====

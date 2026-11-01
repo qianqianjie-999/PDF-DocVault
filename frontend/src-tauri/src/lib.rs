@@ -80,6 +80,7 @@ pub fn run() {
             pdf_commands::extract_pages,
             pdf_commands::encrypt_pdf,
             pdf_commands::decrypt_pdf,
+            pdf_commands::probe_pdf_encryption,
             pdf_commands::add_watermark,
             pdf_commands::compress_pdf,
             pdf_commands::pdf_to_images,
