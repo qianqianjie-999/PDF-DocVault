@@ -17,6 +17,10 @@ export interface CompressOutput {
   compressed_size: number
   ratio: number
   elapsed_ms: number
+  /** 实际重编码的图片数(level 1..=3 恒为 0) */
+  images_reencoded: number
+  /** true = 图片处理失败已回退为纯结构压缩 */
+  fell_back: boolean
 }
 
 export interface ToImagesOutput {

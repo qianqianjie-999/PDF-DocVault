@@ -15,6 +15,7 @@ path = "src/lib.rs"
 lopdf = { workspace = true }
 pdfium-render = { workspace = true }
 image = { workspace = true }
+flate2 = { workspace = true }
 ab_glyph = { workspace = true }
 tokio = { workspace = true }
 rayon = { workspace = true }

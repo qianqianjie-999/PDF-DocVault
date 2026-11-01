@@ -32,6 +32,8 @@ lopdf = { version = "0.34", default-features = false, features = ["nom_parser"] 
 pdfium-render = "0.9"
 # 图像(image 基础处理;photon-rs 高级增强待 OCR 阶段引入)
 image = "0.25"
+# zlib(压缩档解压 PDF 内嵌 FlateDecode 图像流)
+flate2 = "1.0"
 # 证件排版标签文字栅格化
 ab_glyph = "0.2"
 # 数据库

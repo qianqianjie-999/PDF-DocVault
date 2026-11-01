@@ -315,6 +315,10 @@ pub struct CompressOutput {
     pub compressed_size: u64,
     pub ratio: f32,
     pub elapsed_ms: u128,
+    /// 实际重编码的图片数(level 1..=3 恒为 0)
+    pub images_reencoded: usize,
+    /// true = 图片处理失败已回退为纯结构压缩
+    pub fell_back: bool,
 }
 
 #[tauri::command]
@@ -334,6 +338,8 @@ pub async fn compress_pdf(input: CompressInput) -> CmdResult<CompressOutput> {
         compressed_size: stats.compressed_size,
         ratio: stats.ratio,
         elapsed_ms: stats.elapsed_ms,
+        images_reencoded: stats.images_reencoded,
+        fell_back: stats.fell_back,
     })
 }
 

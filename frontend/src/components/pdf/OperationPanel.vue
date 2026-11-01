@@ -228,7 +228,13 @@ async function run() {
         const out = await pickOutput(`compressed-${basename(first)}`)
         if (!out) break
         const res = await pdfApi.compress(first, out, compressLevel.value)
-        ElMessage.success(`压缩完成: 节省 ${res.ratio.toFixed(1)}%`)
+        if (res.fell_back) {
+          ElMessage.warning(`已按结构模式压缩: 节省 ${res.ratio.toFixed(1)}%(图片处理已回退)`)
+        } else if (res.images_reencoded > 0) {
+          ElMessage.success(`压缩完成: 重编码 ${res.images_reencoded} 张图,节省 ${res.ratio.toFixed(1)}%`)
+        } else {
+          ElMessage.success(`结构压缩完成: 节省 ${res.ratio.toFixed(1)}%`)
+        }
         openOutput({ output: out })
         break
       }
@@ -373,7 +379,12 @@ async function run() {
       <!-- 压缩 -->
       <el-form v-else-if="op === 'compress'" label-width="100px" label-position="left">
         <el-form-item label="压缩级别">
-          <el-slider v-model="compressLevel" :min="1" :max="9" />
+          <el-slider v-model="compressLevel" :min="1" :max="9" :marks="{ 1: '无损', 4: '均衡', 9: '最小' }" />
+        </el-form-item>
+        <el-form-item>
+          <span class="compress-hint">
+            1–3 仅清理冗余结构(无损);4–9 重编码内嵌图片,体积更小但画质有损。
+          </span>
         </el-form-item>
       </el-form>
 
@@ -472,5 +483,10 @@ async function run() {
 .hint {
   font-size: 12px;
   color: $text-secondary;
+}
+.compress-hint {
+  font-size: 12px;
+  color: $text-secondary;
+  line-height: 1.5;
 }
 </style>
