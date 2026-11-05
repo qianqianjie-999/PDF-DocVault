@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import { Plus, Picture } from '@element-plus/icons-vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import { idCardApi, type IdCardOptions } from '@/api/idcard'
+import { useSettingsStore } from '@/stores/settings'
 import { basename } from '@/utils/file'
 import { openOutput } from '@/utils/openOutput'
 import type { ScanOptions } from '@/types/scan'
@@ -14,6 +15,7 @@ interface Slot {
   name: string
 }
 
+const settings = useSettingsStore()
 const front = ref<Slot>({ path: null, name: '人像面' })
 const back = ref<Slot>({ path: null, name: '国徽面' })
 const running = ref(false)
@@ -78,7 +80,7 @@ async function generate() {
     return
   }
   const out = await save({
-    defaultPath: '证件排版.pdf',
+    defaultPath: settings.resolveOutput('证件排版.pdf'),
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   })
   if (!out) return

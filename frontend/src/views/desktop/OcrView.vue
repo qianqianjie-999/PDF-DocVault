@@ -7,6 +7,7 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import FileDropZone from '@/components/pdf/FileDropZone.vue'
 import ProgressOverlay from '@/components/pdf/ProgressOverlay.vue'
 import { ocrApi } from '@/api/ocr'
+import { useSettingsStore } from '@/stores/settings'
 import { basename } from '@/utils/file'
 import { openOutput } from '@/utils/openOutput'
 import type { ConvertMode, OcrOptions, OcrPage, OcrSelftestOutput } from '@/types/ocr'
@@ -17,6 +18,7 @@ interface LocalFile {
   isPdf: boolean
 }
 
+const settings = useSettingsStore()
 const files = ref<LocalFile[]>([])
 const running = ref(false)
 const showProgress = ref(false)
@@ -141,7 +143,9 @@ async function runConvert(mode: ConvertMode) {
   const isXlsx = mode === 'xlsx'
   const first = files.value[0]?.name ?? 'ocr'
   const out = await save({
-    defaultPath: first.replace(/\.[^.]+$/, '') + (isXlsx ? '.xlsx' : '.docx'),
+    defaultPath: settings.resolveOutput(
+      first.replace(/\.[^.]+$/, '') + (isXlsx ? '.xlsx' : '.docx'),
+    ),
     filters: isXlsx
       ? [{ name: 'Excel', extensions: ['xlsx'] }]
       : [{ name: 'Word', extensions: ['docx'] }],

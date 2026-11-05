@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { joinPath } from '@/utils/file'
 
 export const useSettingsStore = defineStore('settings', () => {
   const defaultOutputDir = ref('')
@@ -39,6 +40,12 @@ export const useSettingsStore = defineStore('settings', () => {
     )
   }
 
+  /** 配置了默认输出目录时拼上文件名,否则返回裸文件名交给系统对话框定位 */
+  function resolveOutput(name: string): string {
+    const dir = defaultOutputDir.value.trim()
+    return dir ? joinPath(dir, name) : name
+  }
+
   return {
     defaultOutputDir,
     defaultDpi,
@@ -47,5 +54,6 @@ export const useSettingsStore = defineStore('settings', () => {
     autoOpenOutput,
     load,
     save,
+    resolveOutput,
   }
 })

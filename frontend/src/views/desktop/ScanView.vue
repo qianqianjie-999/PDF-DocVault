@@ -7,6 +7,7 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import FileDropZone from '@/components/pdf/FileDropZone.vue'
 import ProgressOverlay from '@/components/pdf/ProgressOverlay.vue'
 import { scanApi } from '@/api/scan'
+import { useSettingsStore } from '@/stores/settings'
 import { basename, dirname } from '@/utils/file'
 import { openOutput } from '@/utils/openOutput'
 import type { ScanOptions } from '@/types/scan'
@@ -23,6 +24,8 @@ const progress = ref(0)
 const current = ref(0)
 const total = ref(0)
 
+const settings = useSettingsStore()
+
 // 扫描选项
 const options = ref<ScanOptions>({
   detect_boundary: true,
@@ -32,7 +35,7 @@ const options = ref<ScanOptions>({
   adaptive_binarize: false,
   contrast_stretch: 0.02,
 })
-const dpi = ref(150)
+const dpi = ref(settings.defaultDpi)
 
 // 试卷去手写:笔迹颜色(blue/red/green/purple/orange/cyan,与 pycore 对应)
 const HW_COLORS = [
@@ -96,14 +99,16 @@ async function withProgress<T>(taskId: string, fn: () => Promise<T>): Promise<T>
 async function runEnhance() {
   if (!canRun.value) return
   const first = files.value[0].path
+  // 设置页的默认输出目录优先,未配置时跟随首图位置
+  const defaultDir = settings.defaultOutputDir.trim() || dirname(first)
   let outDir = await open({
     directory: true,
     title: '选择输出目录',
-    defaultPath: dirname(first),
+    defaultPath: defaultDir,
   })
   if (!outDir) {
-    // 取消则默认输出到首图所在目录
-    outDir = dirname(first)
+    // 取消则输出到默认目录
+    outDir = defaultDir
   }
   running.value = true
   showProgress.value = true
@@ -133,14 +138,16 @@ async function runEnhance() {
 async function runRemoveHandwriting() {
   if (!canRun.value) return
   const first = files.value[0].path
+  // 设置页的默认输出目录优先,未配置时跟随首图位置
+  const defaultDir = settings.defaultOutputDir.trim() || dirname(first)
   let outDir = await open({
     directory: true,
     title: '选择输出目录',
-    defaultPath: dirname(first),
+    defaultPath: defaultDir,
   })
   if (!outDir) {
-    // 取消则默认输出到首图所在目录
-    outDir = dirname(first)
+    // 取消则输出到默认目录
+    outDir = defaultDir
   }
   running.value = true
   showProgress.value = true
@@ -171,7 +178,7 @@ async function runRemoveHandwriting() {
 async function runToPdf() {
   if (!canRun.value) return
   const out = await save({
-    defaultPath: 'scanned.pdf',
+    defaultPath: settings.resolveOutput('scanned.pdf'),
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   })
   if (!out) return

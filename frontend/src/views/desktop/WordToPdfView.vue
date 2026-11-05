@@ -7,6 +7,7 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import FileDropZone from '@/components/pdf/FileDropZone.vue'
 import ProgressOverlay from '@/components/pdf/ProgressOverlay.vue'
 import { officeApi } from '@/api/office'
+import { useSettingsStore } from '@/stores/settings'
 import { basename, dirname } from '@/utils/file'
 import { openOutput } from '@/utils/openOutput'
 import { invoke } from '@tauri-apps/api/core'
@@ -24,6 +25,7 @@ interface LocalFile {
 const ACCEPT_EXT = /\.docx?$/i
 const LAST_DIR_KEY = 'pdf-docvault-word2pdf-dir'
 
+const settings = useSettingsStore()
 const files = ref<LocalFile[]>([])
 const running = ref(false)
 const showProgress = ref(false)
@@ -63,9 +65,9 @@ const canRun = computed(
 )
 
 onMounted(async () => {
-  // 恢复上次使用的输出目录(存在才回填)
-  const last = localStorage.getItem(LAST_DIR_KEY)
-  if (last) outputDir.value = last
+  // 设置页的默认输出目录优先,其次才是本页上次选择的目录
+  outputDir.value =
+    settings.defaultOutputDir.trim() || localStorage.getItem(LAST_DIR_KEY) || ''
   await checkEnv()
 })
 

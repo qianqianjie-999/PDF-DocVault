@@ -7,7 +7,8 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import FileDropZone from '@/components/pdf/FileDropZone.vue'
 import ProgressOverlay from '@/components/pdf/ProgressOverlay.vue'
 import { scanApi } from '@/api/scan'
-import { basename, dirname } from '@/utils/file'
+import { useSettingsStore } from '@/stores/settings'
+import { basename, dirname, joinPath } from '@/utils/file'
 import { openOutput } from '@/utils/openOutput'
 import type {
   GridOrder,
@@ -33,12 +34,14 @@ const current = ref(0)
 const total = ref(0)
 const currentName = ref('')
 
+const settings = useSettingsStore()
+
 // 排版选项
 const perPage = ref<ImagesPerA4>('one')
 const orientation = ref<PageOrientation>('portrait')
 const fitMode = ref<ImageFitMode>('contain')
 const gridOrder = ref<GridOrder>('row_major')
-const dpi = ref(150)
+const dpi = ref(settings.defaultDpi)
 const jpegQuality = ref(85)
 const marginMm = ref(6)
 const gapMm = ref(3)
@@ -80,10 +83,12 @@ function onSelect(items: { path: string; name: string }[]) {
     if (files.value.some((f) => f.path === it.path)) continue
     files.value.push({ path: it.path, name: it.name })
   }
-  // 首次添加且输出路径为空:默认源文件所在目录
+  // 首次添加且输出路径为空:优先设置页默认目录,否则源文件所在目录
   if (!outputPath.value && files.value.length) {
     const first = files.value[0].path
-    outputPath.value = `${dirname(first) || '.'}/images.pdf`
+    outputPath.value = settings.defaultOutputDir.trim()
+      ? settings.resolveOutput('images.pdf')
+      : joinPath(dirname(first) || '.', 'images.pdf')
   }
 }
 
@@ -104,7 +109,7 @@ function move(idx: number, delta: number) {
 
 async function pickOutputFile() {
   const out = await save({
-    defaultPath: 'images.pdf',
+    defaultPath: settings.resolveOutput('images.pdf'),
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   })
   if (out) outputPath.value = out
