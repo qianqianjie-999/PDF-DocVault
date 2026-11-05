@@ -9,12 +9,17 @@ const activation = useActivationStore()
 const features = [
   { icon: '🔗', title: 'PDF 合并', desc: '多个 PDF 合并为一个', path: '/pdf-tools' },
   { icon: '✂️', title: 'PDF 拆分', desc: '按页码范围或每 N 页拆分', path: '/pdf-tools' },
-  { icon: '🔄', title: '页面操作', desc: '旋转/删除/提取/插入', path: '/pdf-tools' },
+  { icon: '🔄', title: '页面操作', desc: '旋转/删除/提取', path: '/pdf-tools' },
   { icon: '🔒', title: 'PDF 加密', desc: 'AES-256 密码保护', path: '/pdf-tools' },
   { icon: '💧', title: 'PDF 水印', desc: '文字/图片水印', path: '/pdf-tools' },
   { icon: '📦', title: 'PDF 压缩', desc: '无损压缩体积', path: '/pdf-tools' },
   { icon: '🖼️', title: '转图片', desc: 'PDF 转 PNG/JPG/WebP', path: '/pdf-tools' },
-  { icon: '📁', title: '文档管理', desc: '本地文档分类管理', path: '/documents' },
+  { icon: '📷', title: '文档扫描', desc: '边界矫正/去阴影/黑白增强', path: '/scan' },
+  { icon: '🪪', title: '证件排版', desc: '身份证正反面一页排版', path: '/idcard' },
+  { icon: '🔍', title: 'OCR 识别', desc: '图片/PDF 离线文字识别', path: '/ocr' },
+  { icon: '📄', title: 'Word 转 PDF', desc: '离线高保真转换', path: '/word2pdf' },
+  { icon: '🧩', title: '图片转 PDF', desc: '多图合成,支持分栏排版', path: '/images2pdf' },
+  { icon: '📁', title: '文档管理', desc: '本地分类管理与全文搜索', path: '/documents' },
 ]
 
 const highlights = [

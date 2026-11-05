@@ -309,8 +309,7 @@ async function run() {
           imagesFormat.value,
           taskName,
           pages.length > 0 ? pages : undefined,
-        )
-        unlisten()
+        ).finally(unlisten)
         progress.value = 100
         ElMessage.success(`转图片完成: ${res.count} 张`)
         openOutput({ dir, firstOutput: res.outputs[0] })

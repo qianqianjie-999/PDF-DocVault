@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::error::CmdResult;
 use crate::state::AppState;
-use pdf_docvault_core::pdf::{self, EncryptOptions, Permissions, SplitMode, WatermarkOptions};
+use pdf_docvault_core::pdf::{self, EncryptOptions, SplitMode, WatermarkOptions};
 
 /// 进度事件 payload
 #[derive(Debug, Clone, Serialize)]
@@ -29,6 +29,14 @@ pub struct CompletePayload {
     pub task_id: String,
     pub kind: String,
     pub status: String,
+}
+
+/// 失败事件 payload
+#[derive(Debug, Clone, Serialize)]
+pub struct ErrorPayload {
+    pub task_id: String,
+    pub kind: String,
+    pub message: String,
 }
 
 fn emit_progress(app: &AppHandle, task_id: &str, kind: &str, current: u32, total: u32) {
@@ -56,6 +64,17 @@ fn emit_complete(app: &AppHandle, task_id: &str, kind: &str, status: &str) {
             task_id: task_id.to_string(),
             kind: kind.to_string(),
             status: status.to_string(),
+        },
+    );
+}
+
+fn emit_error(app: &AppHandle, task_id: &str, kind: &str, message: &str) {
+    let _ = app.emit(
+        "task-error",
+        ErrorPayload {
+            task_id: task_id.to_string(),
+            kind: kind.to_string(),
+            message: message.to_string(),
         },
     );
 }
@@ -420,7 +439,7 @@ pub async fn pdf_to_images(
     let tid = task_id.clone();
     let state_tasks = state.tasks.clone();
 
-    let results = tokio::task::spawn_blocking(move || {
+    let joined = tokio::task::spawn_blocking(move || {
         pdf::render::render_all_pages(
             &inp,
             &out_dir,
@@ -433,11 +452,27 @@ pub async fn pdf_to_images(
             },
         )
     })
-    .await
-    .map_err(|e| crate::error::AppError {
-        code: "JOIN".into(),
-        message: e.to_string(),
-    })??;
+    .await;
+
+    // 失败时同步任务状态并广播事件,避免 TaskManager 永久停在 Running
+    let results = match joined {
+        Ok(Ok(paths)) => paths,
+        Ok(Err(e)) => {
+            let msg = e.to_string();
+            state.tasks.fail(&task_id, &msg);
+            emit_error(&app, &task_id, "to_images", &msg);
+            return Err(e.into());
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            state.tasks.fail(&task_id, &msg);
+            emit_error(&app, &task_id, "to_images", &msg);
+            return Err(crate::error::AppError {
+                code: "JOIN".into(),
+                message: msg,
+            });
+        }
+    };
 
     state.tasks.complete(&task_id);
     emit_complete(&app, &task_id, "to_images", "done");
@@ -472,10 +507,4 @@ pub async fn pdf_page_count(input: PageCountInput) -> CmdResult<PageCountOutput>
         message: e.to_string(),
     })??;
     Ok(PageCountOutput { count })
-}
-
-// 复用以避免未使用警告
-#[allow(unused)]
-fn _unused_perms() -> Permissions {
-    Permissions::default()
 }
