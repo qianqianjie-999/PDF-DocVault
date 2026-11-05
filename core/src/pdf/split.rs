@@ -96,6 +96,14 @@ fn validate_range(r: &PageRange, total: u32) -> Result<PageRange> {
             r.start, r.end
         )));
     }
+    // 起始页已超出总页数时必须先报错:直接截断 end 会得到 start > end 的空区间,
+    // 后面的提取只能报「范围内没有页面」,用户看不出是页码越界。
+    if r.start > total {
+        return Err(CoreError::InvalidArgument(format!(
+            "页码范围 {}-{} 的起始页超出文档总页数 {}",
+            r.start, r.end, total
+        )));
+    }
     Ok(PageRange {
         start: r.start,
         end: r.end.min(total),

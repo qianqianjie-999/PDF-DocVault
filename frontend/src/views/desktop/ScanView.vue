@@ -106,10 +106,8 @@ async function runEnhance() {
     title: '选择输出目录',
     defaultPath: defaultDir,
   })
-  if (!outDir) {
-    // 取消则输出到默认目录
-    outDir = defaultDir
-  }
+  // 取消选择即放弃本次处理,不再静默写入默认目录
+  if (!outDir) return
   running.value = true
   showProgress.value = true
   progress.value = 0
@@ -145,10 +143,8 @@ async function runRemoveHandwriting() {
     title: '选择输出目录',
     defaultPath: defaultDir,
   })
-  if (!outDir) {
-    // 取消则输出到默认目录
-    outDir = defaultDir
-  }
+  // 取消选择即放弃本次处理,不再静默写入默认目录
+  if (!outDir) return
   running.value = true
   showProgress.value = true
   progress.value = 0

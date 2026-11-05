@@ -64,6 +64,26 @@ fn split_every_n_pages() {
     assert_eq!(page_count(&stats.paths[1]), 1);
 }
 
+/// 起始页超出总页数的范围应直接报错,而不是截断后报「范围内没有页面」
+#[test]
+fn split_range_start_beyond_total_fails() {
+    let src = make_pdf(3);
+    let out_dir = src.parent().unwrap().join("split-oob");
+
+    let err = split(
+        &src,
+        &SplitMode::ByRanges {
+            ranges: vec![pdf_docvault_core::pdf::PageRange { start: 4, end: 6 }],
+        },
+        &out_dir,
+    )
+    .expect_err("起始页越界应报错");
+    assert!(
+        format!("{err}").contains("超出文档总页数"),
+        "错误信息应说明页码越界,实际为: {err}"
+    );
+}
+
 // ===== 页面操作 =====
 
 /// 旋转后 /Rotate 字段正确(规划书验证点)
@@ -90,6 +110,25 @@ fn rotate_sets_rotate_field() {
             assert_eq!(rotate, 0, "第 {idx} 页不应被旋转");
         }
     }
+}
+
+/// 页码重复时只旋转一次,避免 "1,1" 被累加成 180°
+#[test]
+fn rotate_duplicate_pages_once() {
+    let src = make_pdf(3);
+    let out = src.parent().unwrap().join("rotated-dup.pdf");
+
+    rotate_pages(&src, &[1, 1], 90, &out).expect("重复页码旋转应成功");
+    let doc = lopdf::Document::load(&out).expect("旋转结果可重新加载");
+    let rotate = doc
+        .get_object(*doc.get_pages().get(&1).unwrap())
+        .expect("页对象存在")
+        .as_dict()
+        .expect("页为字典")
+        .get(b"Rotate")
+        .and_then(|o| o.as_i64())
+        .unwrap_or(0);
+    assert_eq!(rotate, 90, "重复页码不应重复累加角度");
 }
 
 /// 页码留空时旋转应作用于全部页面(与界面「留空表示全部」一致)

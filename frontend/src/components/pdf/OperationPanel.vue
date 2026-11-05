@@ -137,8 +137,11 @@ function parseRanges(s: string): { start: number; end: number }[] {
     .split(',')
     .map((part) => {
       const [a, b] = part.trim().split('-').map((x) => parseInt(x, 10))
-      if (isNaN(a)) return null
-      return { start: a, end: isNaN(b) ? a : b }
+      if (isNaN(a) || a < 1) return null
+      const end = isNaN(b) ? a : b
+      if (end < 1) return null
+      // 与 parsePageNums 一致:8-5 视为 5-8,而不是交给后端报「无效页码范围」
+      return { start: Math.min(a, end), end: Math.max(a, end) }
     })
     .filter((r): r is { start: number; end: number } => r !== null)
 }
@@ -175,10 +178,22 @@ async function run() {
         const first = files[0].path
         // 设置页配置了默认输出目录时优先使用,否则输出到源文件旁
         const dir = settings.defaultOutputDir.trim() || dirname(first)
-        const mode: SplitMode =
-          splitMode.value === 'everyN'
-            ? { kind: 'every_n_pages', n: splitN.value }
-            : { kind: 'by_ranges', ranges: parseRanges(splitRanges.value) }
+        let mode: SplitMode
+        if (splitMode.value === 'everyN') {
+          if (!splitN.value || splitN.value < 1) {
+            ElMessage.warning('请填写大于 0 的拆分页数')
+            break
+          }
+          mode = { kind: 'every_n_pages', n: splitN.value }
+        } else {
+          const ranges = parseRanges(splitRanges.value)
+          // 输入全为无效片段时提前提示,避免用户选完文件才收到后端报错
+          if (!ranges.length) {
+            ElMessage.warning('请输入有效的页码范围,如 1-10,11-20')
+            break
+          }
+          mode = { kind: 'by_ranges', ranges }
+        }
         const res = await pdfApi.split(first, mode, dir)
         ElMessage.success(`拆分完成: ${res.outputs.length} 个文件`)
         openOutput({ dir, firstOutput: res.outputs[0] })

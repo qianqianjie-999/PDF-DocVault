@@ -15,11 +15,14 @@ pub fn rotate_pages(input: &Path, page_nums: &[u32], degrees: u32, output: &Path
     let mut doc = Document::load(input)?;
     let pages = doc.get_pages();
     // 页码留空时作用于全部页面,与界面「留空表示全部」的提示一致
-    let targets: Vec<u32> = if page_nums.is_empty() {
+    // 去重:同一页号出现两次会重复累加角度(如 "1,1" 把第 1 页转成 180°)
+    let mut targets: Vec<u32> = if page_nums.is_empty() {
         pages.keys().copied().collect()
     } else {
         page_nums.to_vec()
     };
+    targets.sort_unstable();
+    targets.dedup();
     for pn in targets {
         let page_id = *pages.get(&pn).ok_or(CoreError::PageNotFound(pn))?;
         let page_obj = doc.get_object_mut(page_id)?;
