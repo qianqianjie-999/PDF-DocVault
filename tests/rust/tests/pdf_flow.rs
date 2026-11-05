@@ -107,6 +107,45 @@ fn split_range_start_beyond_total_fails() {
     );
 }
 
+/// 同一目录重复拆分不能覆盖上一次的成果:文件名撞车时应追加序号
+#[test]
+fn split_twice_keeps_previous_outputs() {
+    let src = make_pdf(3);
+    let out_dir = src.parent().unwrap().join("split-twice");
+
+    let first = split(&src, &SplitMode::EveryNPages { n: 2 }, &out_dir).expect("第一次拆分应成功");
+    let second = split(&src, &SplitMode::EveryNPages { n: 2 }, &out_dir).expect("第二次拆分应成功");
+    assert_eq!(second.outputs, first.outputs);
+    for (a, b) in first.paths.iter().zip(second.paths.iter()) {
+        assert_ne!(a, b, "第二次拆分不应写回同一路径");
+        assert!(a.is_file() && b.is_file(), "两次拆分的文件都应保留");
+    }
+}
+
+/// 同一批里的重复范围应各写一个独立文件,否则两个并行任务会写同一路径
+#[test]
+fn split_duplicate_ranges_write_distinct_files() {
+    let src = make_pdf(3);
+    let out_dir = src.parent().unwrap().join("split-dup");
+
+    let stats = split(
+        &src,
+        &SplitMode::ByRanges {
+            ranges: vec![
+                pdf_docvault_core::pdf::PageRange { start: 1, end: 2 },
+                pdf_docvault_core::pdf::PageRange { start: 1, end: 2 },
+            ],
+        },
+        &out_dir,
+    )
+    .expect("重复范围拆分应成功");
+    assert_eq!(stats.outputs, 2);
+    assert_ne!(stats.paths[0], stats.paths[1], "重复范围不应写到同一个文件");
+    for p in &stats.paths {
+        assert!(p.is_file(), "输出文件应存在: {}", p.display());
+    }
+}
+
 // ===== 页面操作 =====
 
 /// 旋转后 /Rotate 字段正确(规划书验证点)
@@ -191,6 +230,19 @@ fn delete_out_of_range_fails() {
     let out = src.parent().unwrap().join("delete-oob.pdf");
     assert!(delete_pages(&src, &[4], &out).is_err());
     assert!(!out.exists());
+}
+
+/// 删除全部页面应被拒绝:0 页 PDF 无法正常打开,且会让文件变成无用的空壳
+#[test]
+fn delete_all_pages_fails() {
+    let src = make_pdf(2);
+    let out = src.parent().unwrap().join("delete-all.pdf");
+    let err = delete_pages(&src, &[1, 2], &out).expect_err("删除全部页面应报错");
+    assert!(
+        format!("{err}").contains("至少保留"),
+        "错误信息应说明至少保留 1 页,实际: {err}"
+    );
+    assert!(!out.exists(), "失败时不应留下 0 页 PDF");
 }
 
 /// 删除/提取/插入/重排后页数正确
@@ -434,14 +486,93 @@ fn render_pages_by_list() {
     assert_eq!(pages.len(), 2, "去重后应输出 2 张图片");
     assert_eq!(
         pages[0],
-        out_dir.join("page-0001.png"),
-        "首张图片文件名应为原始页码 1"
+        out_dir.join("fixture-5p_page-0001.png"),
+        "首张图片文件名应为源文件名 + 原始页码 1"
     );
     assert_eq!(
         pages[1],
-        out_dir.join("page-0003.png"),
-        "次张图片文件名应为原始页码 3"
+        out_dir.join("fixture-5p_page-0003.png"),
+        "次张图片文件名应为源文件名 + 原始页码 3"
     );
+}
+
+/// 同一输出目录导出两个 PDF 时不能互相覆盖:文件名必须带源文件名
+#[test]
+fn render_different_pdfs_do_not_overwrite() {
+    if !ensure_pdfium() {
+        eprintln!("跳过:未找到 pdfium 动态库(可设置 PDFIUM_PATH)");
+        return;
+    }
+    let a = make_pdf(1);
+    let b = make_pdf(2);
+    // 复制成与 a 同名(fixture-1p.pdf)的文档,验证「同名不同内容」也不会串
+    let b_same_name = b.parent().unwrap().join("fixture-1p.pdf");
+    std::fs::copy(&b, &b_same_name).expect("复制 fixture");
+    let out_dir = a.parent().unwrap().join("rendered-shared");
+
+    let first = pdf_docvault_core::pdf::render_all_pages(
+        &a,
+        &out_dir,
+        96,
+        image::ImageFormat::Png,
+        None,
+        |_, _| {},
+    )
+    .expect("第一次导出应成功");
+    let second = pdf_docvault_core::pdf::render_all_pages(
+        &b_same_name,
+        &out_dir,
+        96,
+        image::ImageFormat::Png,
+        None,
+        |_, _| {},
+    )
+    .expect("第二次导出应成功");
+
+    assert_eq!(first.len(), 1);
+    assert_eq!(second.len(), 2);
+    for p in first.iter().chain(second.iter()) {
+        assert!(p.is_file(), "所有导出图片都应存在: {}", p.display());
+    }
+    assert_ne!(first[0], second[0], "两个 PDF 的第 1 页不能写到同一个文件");
+}
+
+/// 先按页导出、再整本导出:此前只看第 1 页判定撞名,会把已导出的第 3 页覆盖
+#[test]
+fn render_partial_then_full_keeps_previous() {
+    if !ensure_pdfium() {
+        eprintln!("跳过:未找到 pdfium 动态库(可设置 PDFIUM_PATH)");
+        return;
+    }
+    let src = make_pdf(3);
+    let out_dir = src.parent().unwrap().join("rendered-partial-then-full");
+
+    let partial = pdf_docvault_core::pdf::render_all_pages(
+        &src,
+        &out_dir,
+        96,
+        image::ImageFormat::Png,
+        Some(&[3]),
+        |_, _| {},
+    )
+    .expect("单页导出应成功");
+    assert_eq!(partial.len(), 1);
+
+    let full = pdf_docvault_core::pdf::render_all_pages(
+        &src,
+        &out_dir,
+        96,
+        image::ImageFormat::Png,
+        None,
+        |_, _| {},
+    )
+    .expect("整本导出应成功");
+    assert_eq!(full.len(), 3);
+    assert!(
+        !full.contains(&partial[0]),
+        "整本导出不应覆盖此前单独导出的第 3 页"
+    );
+    assert!(partial[0].is_file(), "此前的单页导出应仍保留");
 }
 
 /// 按页列表渲染:页码越界应返回明确错误

@@ -133,6 +133,9 @@ pub fn render_all_pages(
     let pdfium = pdfium()?;
     let document = pdfium.load_pdf_from_file(input, None)?;
     let total = document.pages().len() as u32;
+    if total == 0 {
+        return Err(CoreError::InvalidArgument("输入 PDF 没有页面".into()));
+    }
     let ext = match fmt {
         ImageFormat::Png => "png",
         ImageFormat::Jpeg => "jpg",
@@ -166,6 +169,32 @@ pub fn render_all_pages(
     };
 
     let total_selected = selected.len() as u32;
+    // 文件名带源文件名:此前固定为 page-0001.png,同一输出目录导出第二个 PDF
+    // 会静默覆盖前一个文件的内容;同名 PDF 再次导出时再加序号,保留旧结果。
+    let stem = input
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("document");
+    // 判重必须覆盖本轮所有页,而不是只看第一页:此前先导出第 3 页、再整本导出时,
+    // 第一页不存在 → 不加序号,随后第 3 页的写入会把上次的图片覆盖掉。
+    let mut n = 0u32;
+    let suffix = loop {
+        let s = if n == 0 {
+            String::new()
+        } else {
+            format!("_{n}")
+        };
+        let taken = selected.iter().any(|&p| {
+            out_dir
+                .join(format!("{stem}_page-{p:04}{s}.{ext}"))
+                .exists()
+        });
+        if !taken {
+            break s;
+        }
+        n += 1;
+    };
+
     let mut results = Vec::with_capacity(selected.len());
     for (idx, &page_num) in selected.iter().enumerate() {
         let page = document.pages().get((page_num - 1) as PdfPageIndex)?;
@@ -175,7 +204,7 @@ pub fn render_all_pages(
             .map_err(|e| CoreError::Pdfium(format!("渲染第 {} 页失败: {}", page_num, e)))?
             .as_image()?;
         // 文件名页码使用原始 PDF 页码,按页导出时不重新编号
-        let out_path = out_dir.join(format!("page-{:04}.{}", page_num, ext));
+        let out_path = out_dir.join(format!("{stem}_page-{:04}{suffix}.{}", page_num, ext));
         img.save_with_format(&out_path, fmt)
             .map_err(|e| CoreError::Image(format!("保存图片失败: {e}")))?;
         results.push(out_path);

@@ -50,7 +50,7 @@ const operations: { key: OpType; label: string; icon: string }[] = [
 // 参数
 const splitMode = ref<'ranges' | 'everyN'>('everyN')
 const splitN = ref(50)
-const splitRanges = ref('1-10,11-20')
+const splitRanges = ref('1-10')
 const rotateDegrees = ref(90)
 const pageInput = ref('') // 旋转/删除/提取通用页码输入
 const encryptPassword = ref('')
@@ -132,6 +132,14 @@ function parsePageNums(s: string): number[] {
   return nums
 }
 
+/**
+ * 输入既非空白、又解析不出任何页码(如「第一页」「abc」)时返回 true。
+ * 这类输入不能被当作「留空 = 全部」,否则旋转/转图片会静默处理整本文档。
+ */
+function pageInputInvalid(raw: string): boolean {
+  return raw.trim().length > 0 && parsePageNums(raw).length === 0
+}
+
 function parseRanges(s: string): { start: number; end: number }[] {
   return s
     .split(',')
@@ -200,6 +208,10 @@ async function run() {
         break
       }
       case 'rotate': {
+        if (pageInputInvalid(pageInput.value)) {
+          ElMessage.warning('页码格式有误,请使用如 1,3,5-8 的写法')
+          break
+        }
         const first = files[0].path
         const out = await pickOutput(`rotated-${basename(first)}`)
         if (!out) break
@@ -209,6 +221,10 @@ async function run() {
         break
       }
       case 'delete': {
+        if (pageInputInvalid(pageInput.value)) {
+          ElMessage.warning('页码格式有误,请使用如 1,3,5-8 的写法')
+          break
+        }
         const first = files[0].path
         const out = await pickOutput(`trimmed-${basename(first)}`)
         if (!out) break
@@ -218,6 +234,10 @@ async function run() {
         break
       }
       case 'extract': {
+        if (pageInputInvalid(pageInput.value)) {
+          ElMessage.warning('页码格式有误,请使用如 1,3,5-8 的写法')
+          break
+        }
         const first = files[0].path
         const out = await pickOutput(`extracted-${basename(first)}`)
         if (!out) break
@@ -304,6 +324,10 @@ async function run() {
         break
       }
       case 'toImages': {
+        if (pageInputInvalid(imagesPages.value)) {
+          ElMessage.warning('页码格式有误,请使用如 1,3,5-8 的写法')
+          break
+        }
         const first = files[0].path
         const dir = settings.defaultOutputDir.trim() || dirname(first)
         const taskName = `to-images-${Date.now()}`

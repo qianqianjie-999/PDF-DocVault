@@ -79,9 +79,31 @@ pub fn split(input: &Path, mode: &SplitMode, output_dir: &Path) -> Result<SplitS
         .and_then(|s| s.to_str())
         .unwrap_or("split");
 
-    let paths: Vec<PathBuf> = ranges
+    // 先串行确定每个输出路径:同目录重复拆分(或同名源文件)时文件名会撞车,
+    // 直接覆盖会悄悄丢掉上一次的成果;重复范围还会有两个并行任务写同一路径,
+    // 后者覆盖前者导致文件损坏。命名规则与转图片一致,撞名时追加 _1/_2。
+    let mut planned: Vec<(&PageRange, PathBuf)> = Vec::with_capacity(ranges.len());
+    let mut used: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    for r in &ranges {
+        let mut n = 0u32;
+        let out = loop {
+            let name = if n == 0 {
+                format!("{}_{}-{}.pdf", stem, r.start, r.end)
+            } else {
+                format!("{}_{}-{}_{}.pdf", stem, r.start, r.end, n)
+            };
+            let candidate = output_dir.join(name);
+            if !candidate.exists() && used.insert(candidate.clone()) {
+                break candidate;
+            }
+            n += 1;
+        };
+        planned.push((r, out));
+    }
+
+    let paths: Vec<PathBuf> = planned
         .par_iter()
-        .map(|r| extract_range_to_file(&doc, r, output_dir, stem))
+        .map(|(r, out)| extract_range_to_file(&doc, r, out))
         .collect::<Result<_>>()?;
 
     Ok(SplitStats {
@@ -112,12 +134,7 @@ fn validate_range(r: &PageRange, total: u32) -> Result<PageRange> {
     })
 }
 
-fn extract_range_to_file(
-    doc: &Document,
-    range: &PageRange,
-    out_dir: &Path,
-    stem: &str,
-) -> Result<PathBuf> {
+fn extract_range_to_file(doc: &Document, range: &PageRange, out: &Path) -> Result<PathBuf> {
     // 与 merge/extract_pages 同款:整文档转移对象后重建 Pages/Catalog,
     // 由 prune_objects 清理范围外页面(手工逐页复制会遗漏 max_id,导致保存截断)。
     let mut new_doc = Document::with_version("1.5");
@@ -153,9 +170,8 @@ fn extract_range_to_file(
     new_doc.prune_objects();
     new_doc.renumber_objects();
 
-    let out = out_dir.join(format!("{}_{}-{}.pdf", stem, range.start, range.end));
-    new_doc.save(&out)?;
-    Ok(out)
+    new_doc.save(out)?;
+    Ok(out.to_path_buf())
 }
 
 /// 递归复制一个对象及其引用的所有对象到目标文档

@@ -49,8 +49,18 @@ pub fn delete_pages(input: &Path, page_nums: &[u32], output: &Path) -> Result<()
     if let Some(&bad) = page_nums.iter().find(|&&pn| pn == 0 || pn > total) {
         return Err(CoreError::PageNotFound(bad));
     }
+    // 去重后再判断:删光全部页面会产出 0 页 PDF,多数阅读器直接报错,
+    // 与其生成一个打不开的空壳,不如明确要求至少保留 1 页。
+    let mut targets = page_nums.to_vec();
+    targets.sort_unstable();
+    targets.dedup();
+    if targets.len() as u32 >= total {
+        return Err(CoreError::InvalidArgument(
+            "不能删除全部页面,至少保留 1 页".into(),
+        ));
+    }
     // lopdf delete_pages 接受页号切片(1-based)
-    doc.delete_pages(page_nums);
+    doc.delete_pages(&targets);
     doc.prune_objects();
     doc.renumber_objects();
     doc.save(output)?;
