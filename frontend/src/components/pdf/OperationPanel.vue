@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import { pdfApi } from '@/api/pdf'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/task'
+import { useSettingsStore } from '@/stores/settings'
 import { basename, dirname, formatFileSize, joinPath } from '@/utils/file'
 import { openOutput } from '@/utils/openOutput'
 import ProgressOverlay from './ProgressOverlay.vue'
@@ -12,6 +13,7 @@ import type { EncryptionInfo, SplitMode } from '@/types/pdf'
 
 const filesStore = useFilesStore()
 const taskStore = useTaskStore()
+const settings = useSettingsStore()
 const running = ref(false)
 const progress = ref(0)
 const current = ref(0)
@@ -83,8 +85,9 @@ const watermarkFontSize = ref(48)
 const watermarkOpacity = ref(0.3)
 const watermarkRotation = ref(45)
 const compressLevel = ref(6)
-const imagesDpi = ref(150)
-const imagesFormat = ref<'png' | 'jpg' | 'webp'>('png')
+// 转图片默认值跟随设置页,避免那几项开关形同虚设
+const imagesDpi = ref(settings.defaultDpi)
+const imagesFormat = ref<'png' | 'jpg' | 'webp'>(settings.defaultImageFormat)
 const imagesPages = ref('') // 转图片页码范围输入,留空 = 整本导出
 
 // 需要单文件的操作
@@ -141,8 +144,10 @@ function parseRanges(s: string): { start: number; end: number }[] {
 }
 
 async function pickOutput(defaultName: string): Promise<string | null> {
+  // 设置页配置的默认输出目录优先生效,留空则由系统记住上次位置
+  const dir = settings.defaultOutputDir.trim()
   return await save({
-    defaultPath: defaultName,
+    defaultPath: dir ? joinPath(dir, defaultName) : defaultName,
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   })
 }
@@ -168,7 +173,8 @@ async function run() {
       }
       case 'split': {
         const first = files[0].path
-        const dir = dirname(first)
+        // 设置页配置了默认输出目录时优先使用,否则输出到源文件旁
+        const dir = settings.defaultOutputDir.trim() || dirname(first)
         const mode: SplitMode =
           splitMode.value === 'everyN'
             ? { kind: 'every_n_pages', n: splitN.value }
@@ -284,7 +290,7 @@ async function run() {
       }
       case 'toImages': {
         const first = files[0].path
-        const dir = dirname(first)
+        const dir = settings.defaultOutputDir.trim() || dirname(first)
         const taskName = `to-images-${Date.now()}`
         // 页码输入解析:留空 = 整本导出,否则展开为离散页列表(去重排序由后端完成)
         const pages = parsePageNums(imagesPages.value)

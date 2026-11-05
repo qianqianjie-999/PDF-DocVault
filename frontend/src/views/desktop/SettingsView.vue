@@ -1,12 +1,22 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { open } from '@tauri-apps/plugin-dialog'
 import PageHeader from '@/components/common/PageHeader.vue'
 import { useSettingsStore } from '@/stores/settings'
 
 const settings = useSettingsStore()
 
 onMounted(() => settings.load())
+
+async function chooseOutputDir() {
+  const dir = await open({
+    directory: true,
+    title: '选择默认输出目录',
+    defaultPath: settings.defaultOutputDir || undefined,
+  })
+  if (dir) settings.defaultOutputDir = dir
+}
 
 function save() {
   settings.save()
@@ -21,7 +31,15 @@ function save() {
     <div class="app-card">
       <el-form label-width="140px" label-position="left">
         <el-form-item label="默认输出目录">
-          <el-input v-model="settings.defaultOutputDir" placeholder="留空则使用源文件目录" />
+          <el-input
+            v-model="settings.defaultOutputDir"
+            placeholder="留空则输出到源文件旁"
+            class="dir-input"
+          >
+            <template #append>
+              <el-button @click="chooseOutputDir">选择</el-button>
+            </template>
+          </el-input>
         </el-form-item>
         <el-form-item label="默认 DPI">
           <el-input-number v-model="settings.defaultDpi" :min="72" :max="600" :step="72" />
@@ -38,7 +56,7 @@ function save() {
             <el-option label="中文+英文" value="ch" />
             <el-option label="英文" value="en" />
           </el-select>
-          <span class="hint">OCR 功能将在后续版本提供</span>
+          <span class="hint">当前模型固定中英文混合识别</span>
         </el-form-item>
         <el-form-item label="完成后自动打开">
           <el-switch v-model="settings.autoOpenOutput" />
@@ -60,6 +78,9 @@ function save() {
 </template>
 
 <style scoped lang="scss">
+.dir-input {
+  max-width: 480px;
+}
 .hint {
   margin-left: 12px;
   font-size: 12px;
