@@ -17,7 +17,11 @@ use serde_json::json;
 use tauri::{AppHandle, Emitter};
 
 pub(crate) fn emit_progress(app: &AppHandle, task_id: &str, kind: &str, current: u32, total: u32) {
-    let percent = if total > 0 { (current * 100) / total } else { 0 };
+    let percent = if total > 0 {
+        (current * 100) / total
+    } else {
+        0
+    };
     let _ = app.emit(
         "task-progress",
         json!({

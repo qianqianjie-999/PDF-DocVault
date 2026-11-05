@@ -99,9 +99,15 @@ pub fn remove_handwriting(
     for img in &images {
         args.push(("input".into(), img.to_string_lossy().into_owned()));
     }
-    let resp = run_pycore(pycore_dir, "remove_handwriting", args, opts.timeout_secs, || {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-    });
+    let resp = run_pycore(
+        pycore_dir,
+        "remove_handwriting",
+        args,
+        opts.timeout_secs,
+        || {
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+        },
+    );
 
     let resp = resp?;
     if resp.ok {

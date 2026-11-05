@@ -45,7 +45,8 @@ impl Default for EnhanceOptions {
 pub fn grayscale(input: &Path, output: &Path) -> Result<()> {
     let img = image::open(input).map_err(|e| CoreError::Image(e.to_string()))?;
     let gray = DynamicImage::ImageLuma8(img.to_luma8());
-    gray.save(output).map_err(|e| CoreError::Image(e.to_string()))?;
+    gray.save(output)
+        .map_err(|e| CoreError::Image(e.to_string()))?;
     Ok(())
 }
 
@@ -58,7 +59,8 @@ pub fn binarize(input: &Path, output: &Path, threshold: u8) -> Result<()> {
         let v = if pixel[0] >= threshold { 255 } else { 0 };
         out.put_pixel(x, y, Luma([v]));
     }
-    out.save(output).map_err(|e| CoreError::Image(e.to_string()))?;
+    out.save(output)
+        .map_err(|e| CoreError::Image(e.to_string()))?;
     Ok(())
 }
 
@@ -154,7 +156,8 @@ pub fn scan_enhance(input: &Path, output: &Path, opts: &ScanOptions) -> Result<S
     let start = std::time::Instant::now();
     let (img, detected) = process_to_image(input, opts)?;
     let size = (img.width(), img.height());
-    img.save(output).map_err(|e| CoreError::Image(e.to_string()))?;
+    img.save(output)
+        .map_err(|e| CoreError::Image(e.to_string()))?;
     Ok(ScanStats {
         size,
         boundary_detected: detected,
@@ -185,10 +188,7 @@ pub fn scan_enhance_batch(
         if detected {
             corrected += 1;
         }
-        let name = input
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("scan");
+        let name = input.file_stem().and_then(|s| s.to_str()).unwrap_or("scan");
         let output = out_dir.join(format!("{name}_scan.png"));
         img.save(&output)
             .map_err(|e| CoreError::Image(e.to_string()))?;
@@ -219,7 +219,7 @@ pub fn images_to_pdf(
     if inputs.is_empty() {
         return Err(CoreError::InvalidArgument("至少需要一张输入图片".into()));
     }
-    if !(dpi >= 36.0 && dpi <= 1200.0) {
+    if !(36.0..=1200.0).contains(&dpi) {
         return Err(CoreError::InvalidArgument(format!(
             "dpi 超出范围: {dpi}(支持 36-1200)"
         )));
@@ -237,8 +237,7 @@ pub fn images_to_pdf(
 
         // 编码 JPEG(DCTDecode 直接嵌入,无需额外滤波)
         let mut jpeg = Vec::new();
-        let mut encoder =
-            image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 85);
+        let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 85);
         encoder
             .encode_image(&DynamicImage::ImageRgb8(rgb))
             .map_err(|e| CoreError::Image(format!("JPEG 编码失败: {e}")))?;
@@ -260,10 +259,7 @@ pub fn images_to_pdf(
         let pw = w as f32 * 72.0 / dpi;
         let ph = h as f32 * 72.0 / dpi;
         let content = format!("q {pw:.2} 0 0 {ph:.2} 0 0 cm /Im1 Do Q");
-        let content_id = doc.add_object(lopdf::Stream::new(
-            dictionary! {},
-            content.into_bytes(),
-        ));
+        let content_id = doc.add_object(lopdf::Stream::new(dictionary! {}, content.into_bytes()));
         let page_id = doc.add_object(dictionary! {
             "Type" => "Page",
             "Parent" => pages_id,
@@ -311,21 +307,16 @@ pub fn images_to_pdf(
 // ===== 多图 A4 排版合成 PDF =====
 
 /// A4 排版密度:每页放置几张图
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ImagesPerA4 {
     /// 1 张/页(整页居中)
+    #[default]
     One,
     /// 2 张/页(上下两栏)
     Two,
     /// 4 张/页(2×2 网格)
     Four,
-}
-
-impl Default for ImagesPerA4 {
-    fn default() -> Self {
-        Self::One
-    }
 }
 
 impl ImagesPerA4 {
@@ -339,26 +330,22 @@ impl ImagesPerA4 {
 }
 
 /// 页面方向
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PageOrientation {
     /// 纵向(默认)
+    #[default]
     Portrait,
     /// 横向
     Landscape,
 }
 
-impl Default for PageOrientation {
-    fn default() -> Self {
-        Self::Portrait
-    }
-}
-
 /// 图片填充模式
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ImageFitMode {
     /// 等比缩放完整显示,周围留白(默认,不放大)
+    #[default]
     Contain,
     /// 拉伸填满槽位(可能变形)
     Stretch,
@@ -366,26 +353,15 @@ pub enum ImageFitMode {
     Cover,
 }
 
-impl Default for ImageFitMode {
-    fn default() -> Self {
-        Self::Contain
-    }
-}
-
 /// 网格排列顺序
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GridOrder {
     /// 行优先:从左到右,再下一行(默认)
+    #[default]
     RowMajor,
     /// 列优先:从上到下,再下一列
     ColumnMajor,
-}
-
-impl Default for GridOrder {
-    fn default() -> Self {
-        Self::RowMajor
-    }
 }
 
 /// A4 排版选项
@@ -479,7 +455,11 @@ pub fn images_to_a4_pdf(
     let (cols, rows) = match opts.per_page {
         ImagesPerA4::One => (1u32, 1u32),
         ImagesPerA4::Two => {
-            if landscape { (2, 1) } else { (1, 2) }
+            if landscape {
+                (2, 1)
+            } else {
+                (1, 2)
+            }
         }
         ImagesPerA4::Four => (2, 2),
     };
@@ -571,8 +551,7 @@ pub fn images_to_a4_pdf(
                     let big = image::imageops::resize(&rgb, dw, dh, FilterType::Lanczos3);
                     let cx = (big.width() - slot_w as u32) / 2;
                     let cy = (big.height() - slot_h as u32) / 2;
-                    image::imageops::crop_imm(&big, cx, cy, slot_w as u32, slot_h as u32)
-                        .to_image()
+                    image::imageops::crop_imm(&big, cx, cy, slot_w as u32, slot_h as u32).to_image()
                 }
             };
             // 居中放置(Stretch/Cover 恰好铺满槽位)
@@ -607,10 +586,7 @@ pub fn images_to_a4_pdf(
             jpeg,
         ));
         let content = format!("q {page_w_pt:.2} 0 0 {page_h_pt:.2} 0 0 cm /Im1 Do Q");
-        let content_id = doc.add_object(lopdf::Stream::new(
-            dictionary! {},
-            content.into_bytes(),
-        ));
+        let content_id = doc.add_object(lopdf::Stream::new(dictionary! {}, content.into_bytes()));
         let page_id = doc.add_object(dictionary! {
             "Type" => "Page",
             "Parent" => pages_id,
@@ -698,12 +674,7 @@ pub struct Quad {
 
 impl Quad {
     fn area(&self) -> f32 {
-        let p = [
-            self.tl,
-            self.tr,
-            self.br,
-            self.bl,
-        ];
+        let p = [self.tl, self.tr, self.br, self.bl];
         let mut a = 0.0;
         for i in 0..4 {
             let j = (i + 1) % 4;
@@ -839,6 +810,8 @@ fn solve_linear8(a: &mut [[f64; 9]; 8]) -> [f64; 8] {
             if r != col {
                 let f = a[r][col] / d;
                 if f != 0.0 {
+                    // 需同时借用 a[r] 与 a[col],索引循环是刻意写法
+                    #[allow(clippy::needless_range_loop)]
                     for c in col..n + 1 {
                         a[r][c] -= f * a[col][c];
                     }
@@ -942,8 +915,7 @@ pub fn remove_shadow(rgb: &RgbImage) -> RgbImage {
             ch.put_pixel(x, y, Luma([p[c]]));
         }
         let bg_img = blur_gray(&ch, sigma);
-        let mean_bg: f32 = bg_img.pixels().map(|p| f32::from(p[0])).sum::<f32>()
-            / (w * h) as f32;
+        let mean_bg: f32 = bg_img.pixels().map(|p| f32::from(p[0])).sum::<f32>() / (w * h) as f32;
 
         for (x, y, p) in rgb.enumerate_pixels() {
             let bg = f32::from(bg_img.get_pixel(x, y)[0]).max(5.0);
@@ -1165,9 +1137,7 @@ fn largest_component(binary: &GrayImage) -> Vec<[f32; 2]> {
                         continue;
                     }
                     let ni = idx(nx as usize, ny as usize);
-                    if labels[ni] == 0
-                        && binary.get_pixel(nx as u32, ny as u32)[0] >= 128
-                    {
+                    if labels[ni] == 0 && binary.get_pixel(nx as u32, ny as u32)[0] >= 128 {
                         labels[ni] = current;
                         stack.push(ni);
                     }
@@ -1227,8 +1197,7 @@ mod tests {
         let mut sign = 0.0f32;
         for i in 0..4 {
             let j = (i + 1) % 4;
-            let cross =
-                (p[j][0] - p[i][0]) * (y - p[i][1]) - (p[j][1] - p[i][1]) * (x - p[i][0]);
+            let cross = (p[j][0] - p[i][0]) * (y - p[i][1]) - (p[j][1] - p[i][1]) * (x - p[i][0]);
             if cross != 0.0 {
                 let s = cross.signum();
                 if sign == 0.0 {
@@ -1298,7 +1267,10 @@ mod tests {
         for (x, y, p) in warped.enumerate_pixels() {
             let orig = img.get_pixel(x, y);
             let diff = |a: u8, b: u8| (i16::from(a) - i16::from(b)).unsigned_abs();
-            assert!(diff(p[0], orig[0]) <= 2 && diff(p[1], orig[1]) <= 2, "({x},{y}) 偏差过大");
+            assert!(
+                diff(p[0], orig[0]) <= 2 && diff(p[1], orig[1]) <= 2,
+                "({x},{y}) 偏差过大"
+            );
         }
     }
 
@@ -1313,11 +1285,13 @@ mod tests {
                 img.put_pixel(x, y, Rgb([v, v, v]));
             }
         }
-        let before =
-            (mean_luma_region(&img, 0.0, 0.0, 0.25, 1.0) - mean_luma_region(&img, 0.75, 0.0, 1.0, 1.0)).abs();
+        let before = (mean_luma_region(&img, 0.0, 0.0, 0.25, 1.0)
+            - mean_luma_region(&img, 0.75, 0.0, 1.0, 1.0))
+        .abs();
         let out = remove_shadow(&img);
-        let after =
-            (mean_luma_region(&out, 0.0, 0.0, 0.25, 1.0) - mean_luma_region(&out, 0.75, 0.0, 1.0, 1.0)).abs();
+        let after = (mean_luma_region(&out, 0.0, 0.0, 0.25, 1.0)
+            - mean_luma_region(&out, 0.75, 0.0, 1.0, 1.0))
+        .abs();
         assert!(before > 60.0, "光照渐变应显著: {before}");
         assert!(after < 15.0, "去阴影后亮度应均匀: diff={after}");
     }
@@ -1660,7 +1634,10 @@ mod tests {
             colors_near(sample(w / 4, h * 3 / 4), palette[1]),
             "左下应为绿"
         );
-        assert!(colors_near(sample(w * 3 / 4, h / 4), palette[2]), "右上应为蓝");
+        assert!(
+            colors_near(sample(w * 3 / 4, h / 4), palette[2]),
+            "右上应为蓝"
+        );
         assert!(
             colors_near(sample(w * 3 / 4, h * 3 / 4), palette[3]),
             "右下应为黄"

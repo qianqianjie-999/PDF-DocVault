@@ -121,11 +121,12 @@ pub async fn dev_generate_license() -> CmdResult<String> {
     #[cfg(debug_assertions)]
     {
         let device_id = fingerprint::device_id()?;
-        let blob = activation::license::dev_sign_license(&device_id, "full", 0)
-            .map_err(|e| crate::error::AppError {
+        let blob = activation::license::dev_sign_license(&device_id, "full", 0).map_err(|e| {
+            crate::error::AppError {
                 code: "ACTIVATION".into(),
                 message: e.to_string(),
-            })?;
+            }
+        })?;
         Ok(blob)
     }
     #[cfg(not(debug_assertions))]

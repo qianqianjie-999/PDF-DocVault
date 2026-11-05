@@ -10,7 +10,9 @@ use uuid::Uuid;
 
 use crate::commands::{emit_complete, emit_progress};
 use crate::error::{AppError, CmdResult};
-use pdf_docvault_core::ocr::{ocr_convert, ocr_extract, ConvertMode, ConvertStats, OcrOptions, OcrStats};
+use pdf_docvault_core::ocr::{
+    ocr_convert, ocr_extract, ConvertMode, ConvertStats, OcrOptions, OcrStats,
+};
 
 // ===== 环境自检 =====
 

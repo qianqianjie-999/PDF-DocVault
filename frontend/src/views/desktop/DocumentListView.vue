@@ -49,14 +49,18 @@ function onKeywordInput() {
 }
 
 function onTypeChange() {
-  if (keyword.value.trim() || fileType.value) void doSearch()
-  else searchResults.value = null
+  // 无关键词时类型筛选走列表查询,有关键词时并入全文搜索
+  page.value = 1
+  if (keyword.value.trim()) void doSearch()
+  else void load()
 }
 
 function clearSearch() {
   keyword.value = ''
   fileType.value = ''
   searchResults.value = null
+  page.value = 1
+  void load()
 }
 
 /** 文件名关键词高亮分段(大小写不敏感) */
@@ -82,7 +86,11 @@ function segments(name: string, kw: string): { text: string; hit: boolean }[] {
 async function load() {
   loading.value = true
   try {
-    const res = await documentApi.list({ page: page.value, page_size: pageSize.value })
+    const res = await documentApi.list({
+      page: page.value,
+      page_size: pageSize.value,
+      file_type: fileType.value || undefined,
+    })
     documents.value = res.items
     total.value = res.total
   } finally {

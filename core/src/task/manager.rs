@@ -104,7 +104,7 @@ impl TaskManager {
             t.current = current;
             t.total = total;
             t.progress = if total > 0 {
-                (current as u32 * 100) / total
+                (current * 100) / total
             } else {
                 0
             };

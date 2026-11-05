@@ -6,6 +6,7 @@
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
+use crate::pybridge::StderrLineHandler;
 use crate::{CoreError, Result};
 
 // ===== 质量等级 =====
@@ -163,12 +164,12 @@ where
     args.push(("quality".to_string(), quality.as_str().to_string()));
 
     // 把文件级回调包装成 stderr 行监听器(读线程内调用,需 Send + 'static)
-    let watcher: Option<Box<dyn FnMut(&str) + Send>> = on_progress.map(|cb| {
+    let watcher: Option<StderrLineHandler> = on_progress.map(|cb| {
         Box::new(move |line: &str| {
             if let Some((current, total)) = parse_progress_line(line) {
                 cb(current, total);
             }
-        }) as Box<dyn FnMut(&str) + Send>
+        }) as StderrLineHandler
     });
 
     let resp = match watcher {
@@ -214,7 +215,10 @@ mod tests {
 
     #[test]
     fn test_parse_progress_line() {
-        assert_eq!(parse_progress_line("[PROGRESS] 2 5 报告.docx"), Some((2, 5)));
+        assert_eq!(
+            parse_progress_line("[PROGRESS] 2 5 报告.docx"),
+            Some((2, 5))
+        );
         assert_eq!(parse_progress_line("其他日志"), None);
         assert_eq!(parse_progress_line("[PROGRESS] x 5"), None);
     }

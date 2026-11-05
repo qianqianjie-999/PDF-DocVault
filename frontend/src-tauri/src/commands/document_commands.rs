@@ -38,7 +38,10 @@ pub struct ListResult {
 }
 
 #[tauri::command]
-pub async fn list_documents(state: State<'_, AppState>, params: ListParams) -> CmdResult<ListResult> {
+pub async fn list_documents(
+    state: State<'_, AppState>,
+    params: ListParams,
+) -> CmdResult<ListResult> {
     let page = params.page.unwrap_or(1).max(1);
     let page_size = params.page_size.unwrap_or(20).clamp(1, 200);
     let offset = (page - 1) * page_size;
@@ -114,7 +117,9 @@ pub async fn import_document(state: State<'_, AppState>, params: ImportParams) -
         .and_then(|s| s.to_str())
         .unwrap_or("未命名")
         .to_string();
-    let size = std::fs::metadata(&path).map(|m| m.len() as i64).unwrap_or(0);
+    let size = std::fs::metadata(&path)
+        .map(|m| m.len() as i64)
+        .unwrap_or(0);
     let now = chrono::Utc::now().timestamp();
 
     let id = state.db.with_conn(|conn| {

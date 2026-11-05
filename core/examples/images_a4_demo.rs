@@ -8,15 +8,13 @@
 //! 运行:cargo run -p pdf_docvault_core --example images_a4_demo
 
 use pdf_docvault_core::image::{
-    images_to_a4_pdf, GridOrder, ImagesToA4Options, ImagesPerA4, PageOrientation, ScanOptions,
+    images_to_a4_pdf, GridOrder, ImagesPerA4, ImagesToA4Options, PageOrientation, ScanOptions,
 };
 use std::path::PathBuf;
 
 fn main() {
     let dir = PathBuf::from("/tmp/images2pdf-test");
-    let inputs: Vec<PathBuf> = (1..=6)
-        .map(|i| dir.join(format!("img{i}.png")))
-        .collect();
+    let inputs: Vec<PathBuf> = (1..=6).map(|i| dir.join(format!("img{i}.png"))).collect();
     for p in &inputs {
         assert!(p.is_file(), "缺少测试图 {},请先生成", p.display());
     }

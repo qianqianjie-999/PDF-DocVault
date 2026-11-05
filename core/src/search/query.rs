@@ -138,8 +138,10 @@ mod tests {
     #[test]
     fn multiple_tokens_joined_with_and() {
         let (_dir, s) = setup();
-        s.index_document(1, "2026采购发票.pdf", "pdf", None).unwrap();
-        s.index_document(2, "设备安装指导.docx", "docx", None).unwrap();
+        s.index_document(1, "2026采购发票.pdf", "pdf", None)
+            .unwrap();
+        s.index_document(2, "设备安装指导.docx", "docx", None)
+            .unwrap();
 
         // 两个 token 分属不同文档:AND 语义下无命中
         // (若误改成扁平 all-Should 会命中两篇,此断言用于锁定嵌套 Must 结构)

@@ -35,7 +35,7 @@ pub fn merge(input_paths: &[PathBuf], output: &Path) -> Result<MergeStats> {
     // 并行加载所有文档
     let docs: Vec<Document> = input_paths
         .par_iter()
-        .map(|p| Document::load(p))
+        .map(Document::load)
         .collect::<std::result::Result<_, _>>()?;
 
     let mut merged = Document::with_version("1.5");

@@ -11,9 +11,9 @@ pub mod idcard;
 pub use enhance::{
     adaptive_binarize, adjust_contrast, binarize, detect_document_quad, grayscale,
     images_to_a4_pdf, images_to_pdf, remove_shadow, scan_enhance, scan_enhance_batch,
-    warp_perspective, A4_H_PT, A4_W_PT, EnhanceOptions, GridOrder, ImageFitMode, ImagesPerA4,
-    ImagesToA4Options, ImagesToPdfStats, PageOrientation, Quad, ScanBatchStats, ScanOptions,
-    ScanStats,
+    warp_perspective, EnhanceOptions, GridOrder, ImageFitMode, ImagesPerA4, ImagesToA4Options,
+    ImagesToPdfStats, PageOrientation, Quad, ScanBatchStats, ScanOptions, ScanStats, A4_H_PT,
+    A4_W_PT,
 };
 pub use handwriting::{remove_handwriting, HandwritingOptions, HandwritingStats};
 pub use idcard::{id_cards_to_pdf, IdCardOptions, IdCardStats};

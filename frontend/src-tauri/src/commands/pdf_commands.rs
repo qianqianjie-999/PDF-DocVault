@@ -32,7 +32,11 @@ pub struct CompletePayload {
 }
 
 fn emit_progress(app: &AppHandle, task_id: &str, kind: &str, current: u32, total: u32) {
-    let percent = if total > 0 { (current * 100) / total } else { 0 };
+    let percent = if total > 0 {
+        (current * 100) / total
+    } else {
+        0
+    };
     let _ = app.emit(
         "task-progress",
         ProgressPayload {
@@ -312,7 +316,12 @@ pub async fn add_watermark(input: WatermarkInput) -> CmdResult<PathBuf> {
         if let Some(img_path) = img {
             pdf::watermark::add_image_watermark(&inp, &img_path, &opts, &out)
         } else {
-            pdf::watermark::add_text_watermark(&inp, text.as_deref().unwrap_or("PDF-DocVault"), &opts, &out)
+            pdf::watermark::add_text_watermark(
+                &inp,
+                text.as_deref().unwrap_or("PDF-DocVault"),
+                &opts,
+                &out,
+            )
         }
     })
     .await
@@ -412,10 +421,17 @@ pub async fn pdf_to_images(
     let state_tasks = state.tasks.clone();
 
     let results = tokio::task::spawn_blocking(move || {
-        pdf::render::render_all_pages(&inp, &out_dir, dpi, fmt, pages.as_deref(), |current, total| {
-            state_tasks.report(&tid, current, total);
-            emit_progress(&app_handle, &tid, "to_images", current, total);
-        })
+        pdf::render::render_all_pages(
+            &inp,
+            &out_dir,
+            dpi,
+            fmt,
+            pages.as_deref(),
+            |current, total| {
+                state_tasks.report(&tid, current, total);
+                emit_progress(&app_handle, &tid, "to_images", current, total);
+            },
+        )
     })
     .await
     .map_err(|e| crate::error::AppError {

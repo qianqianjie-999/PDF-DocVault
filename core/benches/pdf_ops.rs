@@ -5,7 +5,7 @@
 //!
 //! 运行:`cargo bench -p pdf_docvault_core --bench pdf_ops`
 
-use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use lopdf::{dictionary, Document, Object, ObjectId};
 use pdf_docvault_core::pdf;
 use std::path::PathBuf;
@@ -26,7 +26,10 @@ fn make_test_pdf(path: &std::path::Path, pages: u32) {
     });
 
     for i in 0..pages {
-        let text = format!("BT /F1 12 Tf 72 700 Td (Page {} - PDF-DocVault Benchmark) Tj ET", i + 1);
+        let text = format!(
+            "BT /F1 12 Tf 72 700 Td (Page {} - PDF-DocVault Benchmark) Tj ET",
+            i + 1
+        );
         let content = text.into_bytes();
         let stream = lopdf::Stream::new(dictionary! {}, content);
         let content_id = doc.add_object(stream);

@@ -41,10 +41,7 @@ impl Database {
     where
         F: FnOnce(&Connection) -> Result<T>,
     {
-        let guard = self
-            .conn
-            .lock()
-            .map_err(|_| CoreError::DbLockPoisoned)?;
+        let guard = self.conn.lock().map_err(|_| CoreError::DbLockPoisoned)?;
         f(&guard)
     }
 }

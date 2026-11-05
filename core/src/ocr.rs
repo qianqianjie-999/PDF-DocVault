@@ -210,10 +210,8 @@ pub fn ocr_convert(
 
     let (tmp_dir, images, _pdf_pages) = prepare_images(inputs, opts.dpi, &notify)?;
 
-    let mut args: Vec<(String, String)> = vec![(
-        "output".into(),
-        output.to_string_lossy().into_owned(),
-    )];
+    let mut args: Vec<(String, String)> =
+        vec![("output".into(), output.to_string_lossy().into_owned())];
     if let Some(engine) = &opts.engine {
         args.push(("engine".into(), engine.clone()));
     }
@@ -278,7 +276,10 @@ pub(crate) fn prepare_images(
     let total_inputs = inputs.len() as u32;
     for (i, input) in inputs.iter().enumerate() {
         if !input.is_file() {
-            return Err(CoreError::Ocr(format!("输入文件不存在: {}", input.display())));
+            return Err(CoreError::Ocr(format!(
+                "输入文件不存在: {}",
+                input.display()
+            )));
         }
         if is_pdf(input) {
             pdf_pages += 1;
@@ -363,7 +364,10 @@ mod tests {
         println!("engine={}, elapsed_ms={}", stats.engine, stats.elapsed_ms);
         println!("text:\n{}", stats.pages[0].text);
         assert_eq!(stats.pages.len(), 1);
-        assert!(stats.pages[0].text.contains("密档大师"), "识别结果应包含'密档大师'");
+        assert!(
+            stats.pages[0].text.contains("密档大师"),
+            "识别结果应包含'密档大师'"
+        );
     }
 
     /// 端到端转换:表格图 → xlsx。需要 pycore/.venv。
@@ -386,7 +390,10 @@ mod tests {
             None,
         )
         .expect("转换应成功");
-        println!("mode={}, rows={:?}, elapsed_ms={}", stats.mode, stats.rows, stats.elapsed_ms);
+        println!(
+            "mode={}, rows={:?}, elapsed_ms={}",
+            stats.mode, stats.rows, stats.elapsed_ms
+        );
         assert!(out.is_file(), "xlsx 应已生成");
         assert_eq!(stats.rows, Some(4), "应还原 4 行表格");
         let _ = std::fs::remove_file(&out);
@@ -405,15 +412,29 @@ mod tests {
         }
         // 两张图合成 2 页 PDF
         let pdf = std::env::temp_dir().join("pdf-docvault-naming-test.pdf");
-        crate::image::images_to_pdf(&[zh.to_path_buf(), table.to_path_buf()], &pdf, 150.0, &Default::default(), None)
-            .expect("合成 PDF 应成功");
+        crate::image::images_to_pdf(
+            &[zh.to_path_buf(), table.to_path_buf()],
+            &pdf,
+            150.0,
+            &Default::default(),
+            None,
+        )
+        .expect("合成 PDF 应成功");
 
         let (tmp_dir, images, pdf_pages) =
-            prepare_images(&[pdf.clone()], 150, &|_, _| {}).expect("渲染应成功");
+            prepare_images(std::slice::from_ref(&pdf), 150, &|_, _| {}).expect("渲染应成功");
         assert_eq!(pdf_pages, 1);
         assert_eq!(images.len(), 2, "PDF 两页应渲染出两张图");
-        assert!(images[0].to_string_lossy().contains("naming-test_p001.png"), "第 1 页命名: {:?}", images[0]);
-        assert!(images[1].to_string_lossy().contains("naming-test_p002.png"), "第 2 页命名: {:?}", images[1]);
+        assert!(
+            images[0].to_string_lossy().contains("naming-test_p001.png"),
+            "第 1 页命名: {:?}",
+            images[0]
+        );
+        assert!(
+            images[1].to_string_lossy().contains("naming-test_p002.png"),
+            "第 2 页命名: {:?}",
+            images[1]
+        );
         assert!(images.iter().all(|p| p.is_file()), "重命名后的文件应存在");
         let _ = std::fs::remove_dir_all(&tmp_dir);
         let _ = std::fs::remove_file(&pdf);

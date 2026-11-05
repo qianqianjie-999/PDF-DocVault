@@ -7,15 +7,15 @@ use crate::errors::{CoreError, Result};
 
 /// 旋转指定页面。`degrees` 应为 90/180/270 之一(累加到已有 /Rotate)。
 pub fn rotate_pages(input: &Path, page_nums: &[u32], degrees: u32, output: &Path) -> Result<()> {
-    if degrees % 90 != 0 {
-        return Err(CoreError::InvalidArgument("旋转角度必须是 90 的倍数".into()));
+    if !degrees.is_multiple_of(90) {
+        return Err(CoreError::InvalidArgument(
+            "旋转角度必须是 90 的倍数".into(),
+        ));
     }
     let mut doc = Document::load(input)?;
     let pages = doc.get_pages();
     for &pn in page_nums {
-        let page_id = *pages
-            .get(&pn)
-            .ok_or(CoreError::PageNotFound(pn))?;
+        let page_id = *pages.get(&pn).ok_or(CoreError::PageNotFound(pn))?;
         let page_obj = doc.get_object_mut(page_id)?;
         let dict = page_obj.as_dict_mut()?;
         let cur = dict
@@ -83,12 +83,7 @@ pub fn extract_pages(input: &Path, page_nums: &[u32], output: &Path) -> Result<(
 }
 
 /// 将 `input2` 的所有页面插入到 `input1` 的 `after_page` 之后
-pub fn insert_pages(
-    input1: &Path,
-    input2: &Path,
-    after_page: u32,
-    output: &Path,
-) -> Result<()> {
+pub fn insert_pages(input1: &Path, input2: &Path, after_page: u32, output: &Path) -> Result<()> {
     let mut doc1 = Document::load(input1)?;
     let doc2 = Document::load(input2)?;
     let pages1 = doc1.get_pages();
@@ -121,7 +116,7 @@ pub fn insert_pages(
 
     let mut new_kids: Vec<Object> = Vec::new();
     // 修正插入页的 /Parent:原本指向 doc2 的 Pages 根(prune 后会消失),改指 doc1 的 Pages 根
-    for (_, id) in &pages2 {
+    for id in pages2.values() {
         if let Some(page) = doc1.objects.get_mut(id) {
             if let Ok(dict) = page.as_dict_mut() {
                 dict.set("Parent", Object::Reference(pages_id));

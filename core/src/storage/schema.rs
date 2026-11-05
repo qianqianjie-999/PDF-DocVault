@@ -60,11 +60,10 @@ pub const MIGRATIONS: &[&str] = &[
 /// 执行迁移,将数据库升级到最新版本
 pub fn migrate(conn: &Connection) -> Result<()> {
     conn.execute_batch("CREATE TABLE IF NOT EXISTS schema_version (v INTEGER);")?;
-    let current: i64 = conn.query_row(
-        "SELECT COALESCE(MAX(v), 0) FROM schema_version",
-        [],
-        |r| r.get(0),
-    )?;
+    let current: i64 =
+        conn.query_row("SELECT COALESCE(MAX(v), 0) FROM schema_version", [], |r| {
+            r.get(0)
+        })?;
     for (i, sql) in MIGRATIONS.iter().enumerate() {
         let v = (i + 1) as i64;
         if v > current {

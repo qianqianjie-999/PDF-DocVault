@@ -20,7 +20,8 @@ pub struct DeviceInfo {
 
 /// 生成设备指纹(SHA256 哈希,16 进制)
 pub fn device_id() -> Result<String> {
-    let raw = machine_uid::get().map_err(|e| CoreError::Activation(format!("读取机器 ID 失败: {e}")))?;
+    let raw =
+        machine_uid::get().map_err(|e| CoreError::Activation(format!("读取机器 ID 失败: {e}")))?;
     let mut hasher = Sha256::new();
     hasher.update(b"pdf-docvault::v1::");
     hasher.update(raw.as_bytes());

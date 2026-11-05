@@ -77,7 +77,10 @@ pub fn add_text_watermark(
 fn build_text_watermark_content(text: &str, opts: &WatermarkOptions) -> Vec<u8> {
     // 构造 PDF content stream
     // 转义文本中的特殊字符
-    let escaped = text.replace('\\', "\\\\").replace('(', "\\(").replace(')', "\\)");
+    let escaped = text
+        .replace('\\', "\\\\")
+        .replace('(', "\\(")
+        .replace(')', "\\)");
     let (r, g, b) = (opts.color[0], opts.color[1], opts.color[2]);
     // Tm: a b c d e f,旋转矩阵
     let rad = opts.rotation.to_radians();
@@ -152,15 +155,18 @@ fn ensure_resources_font(
 fn append_content(doc: &mut Document, page_id: ObjectId, new_content_id: ObjectId) -> Result<()> {
     let page_obj = doc.get_object_mut(page_id)?;
     let dict = page_obj.as_dict_mut()?;
-    let contents = dict.get(b"Contents").map_err(|_| {
-        CoreError::Internal("页面缺少 Contents".into())
-    })?;
+    let contents = dict
+        .get(b"Contents")
+        .map_err(|_| CoreError::Internal("页面缺少 Contents".into()))?;
     let contents_clone = contents.clone();
     match contents_clone {
         Object::Reference(id) => {
             dict.set(
                 "Contents",
-                Object::Array(vec![Object::Reference(id), Object::Reference(new_content_id)]),
+                Object::Array(vec![
+                    Object::Reference(id),
+                    Object::Reference(new_content_id),
+                ]),
             );
         }
         Object::Array(arr) => {

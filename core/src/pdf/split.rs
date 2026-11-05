@@ -52,7 +52,10 @@ pub fn split(input: &Path, mode: &SplitMode, output_dir: &Path) -> Result<SplitS
             if ranges.is_empty() {
                 return Err(CoreError::InvalidArgument("页码范围列表为空".into()));
             }
-            ranges.iter().map(|r| validate_range(r, total)).collect::<Result<_>>()?
+            ranges
+                .iter()
+                .map(|r| validate_range(r, total))
+                .collect::<Result<_>>()?
         }
         SplitMode::EveryNPages { n } => {
             if *n == 0 {

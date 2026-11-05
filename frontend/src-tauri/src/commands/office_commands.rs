@@ -152,13 +152,7 @@ pub async fn word_to_pdf(
         let cb = move |current: u32, total: u32| {
             emit_progress(&app2, &tid, "word-to-pdf", current, total);
         };
-        pdf_docvault_core::office::word_to_pdf(
-            &inputs,
-            &output_dir,
-            quality,
-            1800,
-            Some(cb),
-        )
+        pdf_docvault_core::office::word_to_pdf(&inputs, &output_dir, quality, 1800, Some(cb))
     })
     .await
     .map_err(|e| AppError {

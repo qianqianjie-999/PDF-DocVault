@@ -13,6 +13,9 @@ use std::time::Duration;
 
 use crate::{CoreError, Result};
 
+/// stderr 逐行回调(在读取线程内调用,需 Send + 'static)
+pub(crate) type StderrLineHandler = Box<dyn FnMut(&str) + Send>;
+
 // ===== 协议反序列化(pycore/main.py 输出) =====
 
 #[derive(Clone, Deserialize)]
@@ -189,7 +192,7 @@ pub(crate) fn spawn_with_timeout_watched(
     mut cmd: Command,
     timeout_secs: u64,
     stdin_payload: Option<String>,
-    on_stderr_line: Option<Box<dyn FnMut(&str) + Send>>,
+    on_stderr_line: Option<StderrLineHandler>,
 ) -> Result<(std::process::ExitStatus, String, String)> {
     use std::io::{BufRead, BufReader, Write};
     use std::thread;
@@ -338,7 +341,7 @@ fn run_pycore_inner(
     timeout_secs: u64,
     cleanup: impl Fn(),
     stdin_payload: Option<String>,
-    on_stderr_line: Option<Box<dyn FnMut(&str) + Send>>,
+    on_stderr_line: Option<StderrLineHandler>,
 ) -> Result<PyResponse> {
     let python = resolve_python(pycore_dir)?;
     let mut cmd = Command::new(&python);

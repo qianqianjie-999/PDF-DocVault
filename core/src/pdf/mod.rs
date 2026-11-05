@@ -11,13 +11,13 @@ pub mod render;
 pub mod split;
 pub mod watermark;
 
-pub use merge::{merge, MergeStats};
-pub use split::{split, PageRange, SplitMode, SplitStats};
-pub use pages::{delete_pages, extract_pages, insert_pages, reorder_pages, rotate_pages};
+pub use compress::{compress, CompressStats};
 pub use encrypt::{
     decrypt, encrypt_aes256, probe_encryption, DecryptReport, EncryptOptions, EncryptReport,
     EncryptionInfo, PermissionReport, Permissions,
 };
-pub use watermark::{add_image_watermark, add_text_watermark, WatermarkOptions};
-pub use compress::{compress, CompressStats};
+pub use merge::{merge, MergeStats};
+pub use pages::{delete_pages, extract_pages, insert_pages, reorder_pages, rotate_pages};
 pub use render::{render_all_pages, render_page_to_bytes, render_page_to_image};
+pub use split::{split, PageRange, SplitMode, SplitStats};
+pub use watermark::{add_image_watermark, add_text_watermark, WatermarkOptions};

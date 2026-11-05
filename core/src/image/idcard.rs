@@ -276,13 +276,8 @@ pub fn id_cards_to_pdf(
         },
         jpeg,
     ));
-    let content = format!(
-        "q {A4_W_PT:.2} 0 0 {A4_H_PT:.2} 0 0 cm /Im1 Do Q"
-    );
-    let content_id = doc.add_object(lopdf::Stream::new(
-        dictionary! {},
-        content.into_bytes(),
-    ));
+    let content = format!("q {A4_W_PT:.2} 0 0 {A4_H_PT:.2} 0 0 cm /Im1 Do Q");
+    let content_id = doc.add_object(lopdf::Stream::new(dictionary! {}, content.into_bytes()));
     let page_id = doc.add_object(dictionary! {
         "Type" => "Page",
         "Parent" => pages_id,

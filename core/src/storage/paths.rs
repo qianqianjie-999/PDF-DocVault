@@ -32,7 +32,7 @@ pub fn temp_file_path(ext: &str) -> Result<PathBuf> {
     let dir = temp_dir()?;
     let name = format!(
         "{}.{}",
-        uuid::Uuid::new_v4().simple().to_string(),
+        uuid::Uuid::new_v4().simple(),
         ext.trim_start_matches('.')
     );
     Ok(dir.join(name))

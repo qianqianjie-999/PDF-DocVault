@@ -14,8 +14,7 @@ use pdf_docvault_core::office::{self, WordQuality};
 
 /// 定位 pycore venv python(测试 fixture 生成器)
 fn venv_python() -> Option<PathBuf> {
-    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../pycore/.venv/bin/python");
+    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../pycore/.venv/bin/python");
     let p = p.canonicalize().ok()?;
     p.is_file().then_some(p)
 }
@@ -25,17 +24,15 @@ fn libreoffice_available() -> bool {
     let Ok(path) = std::env::var("PATH") else {
         return false;
     };
-    std::env::split_paths(&path).any(|dir| {
-        dir.join("soffice").is_file() || dir.join("libreoffice").is_file()
-    })
+    std::env::split_paths(&path)
+        .any(|dir| dir.join("soffice").is_file() || dir.join("libreoffice").is_file())
 }
 
 /// 用 python-docx 在 `dir` 生成 `name`,内含中文段落与一张图片
 fn make_docx(python: &Path, dir: &Path, name: &str) -> PathBuf {
     let out = dir.join(name);
     // 内联脚本:段落 + PIL 纯色图 + 标题
-    let script = format!(
-        r#"
+    let script = r#"
 import sys
 from docx import Document
 from docx.shared import Inches
@@ -47,10 +44,9 @@ doc.add_heading("集成测试文档", 0)
 doc.add_paragraph("中文段落:Word 转 PDF 批量转换验证。")
 doc.add_picture(img_p, width=Inches(4))
 doc.save(sys.argv[1])
-"#
-    );
+"#;
     let status = std::process::Command::new(python)
-        .args(["-c", &script])
+        .args(["-c", script])
         .arg(&out)
         .arg(dir.join(format!("{name}.png")))
         .status()
@@ -124,9 +120,14 @@ fn quality_levels_produce_pdfs() {
     let mut sizes: Vec<u64> = Vec::new();
     for quality in [WordQuality::High, WordQuality::Medium, WordQuality::Low] {
         let out_dir = dir.path().join(format!("{:?}", quality));
-        let report =
-            office::word_to_pdf(&[src.clone()], &out_dir, quality, 300, None::<fn(u32, u32)>)
-                .expect("转换应成功");
+        let report = office::word_to_pdf(
+            std::slice::from_ref(&src),
+            &out_dir,
+            quality,
+            300,
+            None::<fn(u32, u32)>,
+        )
+        .expect("转换应成功");
         assert_eq!(report.success_count(), 1);
         let pdf = Path::new(&report.succeeded[0].1);
         sizes.push(pdf.metadata().unwrap().len());
@@ -194,5 +195,9 @@ fn missing_file_reported_not_fatal() {
     .expect("批量调用本身应正常返回");
 
     assert_eq!(report.fail_count(), 1);
-    assert!(report.failed[0].1.contains("不存在"), "原因为: {}", report.failed[0].1);
+    assert!(
+        report.failed[0].1.contains("不存在"),
+        "原因为: {}",
+        report.failed[0].1
+    );
 }
