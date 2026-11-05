@@ -214,17 +214,17 @@ async function exportTxt() {
 
     <!-- 环境状态条 -->
     <el-alert
-      v-if="env"
-      :type="env.ok ? 'success' : 'warning'"
+      v-if="env || envChecking"
+      :type="env?.ok ? 'success' : 'warning'"
       :closable="false"
       class="env-bar"
     >
       <template #title>
         <span v-if="envChecking">正在检测 OCR 环境…</span>
-        <span v-else-if="env.ok">
+        <span v-else-if="env?.ok">
           OCR 环境就绪(引擎: {{ env.engine }}<template v-if="env.message">,可用: {{ env.message }}</template>)
         </span>
-        <span v-else>OCR 环境未就绪:{{ env.message }}</span>
+        <span v-else>OCR 环境未就绪:{{ env?.message }}</span>
       </template>
     </el-alert>
 

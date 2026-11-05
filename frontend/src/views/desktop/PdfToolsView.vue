@@ -3,6 +3,10 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import FileDropZone from '@/components/pdf/FileDropZone.vue'
 import FileList from '@/components/pdf/FileList.vue'
 import OperationPanel from '@/components/pdf/OperationPanel.vue'
+import { useFilesStore } from '@/stores/files'
+
+// 仅本页把选中文件写入全局列表,避免其他页面的拖拽污染 PDF 工具列表
+const filesStore = useFilesStore()
 </script>
 
 <template>
@@ -10,7 +14,7 @@ import OperationPanel from '@/components/pdf/OperationPanel.vue'
     <PageHeader title="PDF 工具" subtitle="本地处理 · 文件不离开本机" />
     <div class="tools-grid">
       <div class="left-col">
-        <FileDropZone accept="pdf" />
+        <FileDropZone accept="pdf" @select="filesStore.addFiles" />
         <FileList />
       </div>
       <div class="right-col">

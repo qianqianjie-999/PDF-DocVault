@@ -2,7 +2,7 @@
 import { onUnmounted } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
-import { useFilesStore, type SelectedFile } from '@/stores/files'
+import type { SelectedFile } from '@/stores/files'
 import { basename, matchesAccept } from '@/utils/file'
 import { ElMessage } from 'element-plus'
 
@@ -14,7 +14,18 @@ const props = defineProps<{
 
 const emit = defineEmits<{ (e: 'select', files: SelectedFile[]): void }>()
 
-const filesStore = useFilesStore()
+/** 统一生成选中项:读取真实体积,失败时退回 0 */
+async function toSelectedFile(p: string): Promise<SelectedFile> {
+  let size = 0
+  try {
+    const fs = await import('@tauri-apps/plugin-fs')
+    const stat = await fs.stat(p)
+    size = Number(stat.size) || 0
+  } catch {
+    /* 读取失败时体积显示为 0,不影响后续处理 */
+  }
+  return { path: p, name: basename(p), size }
+}
 
 async function pickFiles() {
   const extensions = props.accept ? props.accept.split(',').map((s) => s.trim()) : ['pdf']
@@ -24,20 +35,7 @@ async function pickFiles() {
   })
   if (!selected) return
   const arr = Array.isArray(selected) ? selected : [selected]
-  const items: SelectedFile[] = await Promise.all(
-    arr.map(async (p) => {
-      let size = 0
-      try {
-        const fs = await import('@tauri-apps/plugin-fs')
-        const stat = await fs.stat(p)
-        size = Number(stat.size) || 0
-      } catch {
-        /* ignore */
-      }
-      return { path: p, name: basename(p), size }
-    }),
-  )
-  filesStore.addFiles(items)
+  const items = await Promise.all(arr.map(toSelectedFile))
   emit('select', items)
 }
 
@@ -56,12 +54,7 @@ async function listenDrop() {
         if (event.payload.paths.length) ElMessage.warning('不支持的文件类型')
         return
       }
-      const items: SelectedFile[] = paths.map((p) => ({
-        path: p,
-        name: basename(p),
-        size: 0,
-      }))
-      filesStore.addFiles(items)
+      const items = await Promise.all(paths.map(toSelectedFile))
       emit('select', items)
     })
     // 卸载动作可能先于注册完成,此时直接注销

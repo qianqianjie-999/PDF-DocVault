@@ -125,6 +125,8 @@ async function load() {
     })
     documents.value = res.items
     total.value = res.total
+  } catch (e: any) {
+    ElMessage.error(`加载文档列表失败: ${e?.message ?? e}`)
   } finally {
     loading.value = false
   }
