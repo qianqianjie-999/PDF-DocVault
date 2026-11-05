@@ -14,7 +14,13 @@ pub fn rotate_pages(input: &Path, page_nums: &[u32], degrees: u32, output: &Path
     }
     let mut doc = Document::load(input)?;
     let pages = doc.get_pages();
-    for &pn in page_nums {
+    // 页码留空时作用于全部页面,与界面「留空表示全部」的提示一致
+    let targets: Vec<u32> = if page_nums.is_empty() {
+        pages.keys().copied().collect()
+    } else {
+        page_nums.to_vec()
+    };
+    for pn in targets {
         let page_id = *pages.get(&pn).ok_or(CoreError::PageNotFound(pn))?;
         let page_obj = doc.get_object_mut(page_id)?;
         let dict = page_obj.as_dict_mut()?;
@@ -32,6 +38,14 @@ pub fn rotate_pages(input: &Path, page_nums: &[u32], degrees: u32, output: &Path
 /// 删除指定页面
 pub fn delete_pages(input: &Path, page_nums: &[u32], output: &Path) -> Result<()> {
     let mut doc = Document::load(input)?;
+    if page_nums.is_empty() {
+        return Err(CoreError::InvalidArgument("未指定要删除的页面".into()));
+    }
+    let total = doc.get_pages().len() as u32;
+    // 提前校验页号,避免超出范围时静默生成一份未删除任何页面的副本
+    if let Some(&bad) = page_nums.iter().find(|&&pn| pn == 0 || pn > total) {
+        return Err(CoreError::PageNotFound(bad));
+    }
     // lopdf delete_pages 接受页号切片(1-based)
     doc.delete_pages(page_nums);
     doc.prune_objects();

@@ -143,7 +143,14 @@ async function remove(doc: Document) {
     ElMessage.success('已删除')
     // 搜索态下删除后刷新搜索结果,否则刷新列表
     if (searchResults.value) await doSearch()
-    else await load()
+    else {
+      await load()
+      // 删掉的是当前页最后一条时回退一页,避免停留在空页
+      if (!documents.value.length && page.value > 1) {
+        page.value -= 1
+        await load()
+      }
+    }
   } catch (e: any) {
     ElMessage.error(`删除失败: ${e?.message ?? e}`)
   }

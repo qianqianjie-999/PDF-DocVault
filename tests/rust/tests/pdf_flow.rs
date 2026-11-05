@@ -92,6 +92,45 @@ fn rotate_sets_rotate_field() {
     }
 }
 
+/// 页码留空时旋转应作用于全部页面(与界面「留空表示全部」一致)
+#[test]
+fn rotate_all_pages_when_empty() {
+    let src = make_pdf(3);
+    let out = src.parent().unwrap().join("rotated-all.pdf");
+
+    rotate_pages(&src, &[], 90, &out).expect("空页码旋转应成功");
+    let doc = lopdf::Document::load(&out).expect("旋转结果可重新加载");
+    for (idx, id) in doc.get_pages() {
+        let rotate = doc
+            .get_object(id)
+            .expect("页对象存在")
+            .as_dict()
+            .expect("页为字典")
+            .get(b"Rotate")
+            .and_then(|o| o.as_i64())
+            .unwrap_or(0);
+        assert_eq!(rotate, 90, "第 {idx} 页应旋转 90 度");
+    }
+}
+
+/// 未指定页码时删除应报错,而不是静默输出未删除任何页的副本
+#[test]
+fn delete_without_pages_fails() {
+    let src = make_pdf(3);
+    let out = src.parent().unwrap().join("delete-empty.pdf");
+    assert!(delete_pages(&src, &[], &out).is_err());
+    assert!(!out.exists());
+}
+
+/// 删除超出总页数的页码应报错
+#[test]
+fn delete_out_of_range_fails() {
+    let src = make_pdf(3);
+    let out = src.parent().unwrap().join("delete-oob.pdf");
+    assert!(delete_pages(&src, &[4], &out).is_err());
+    assert!(!out.exists());
+}
+
 /// 删除/提取/插入/重排后页数正确
 #[test]
 fn delete_extract_insert_reorder() {
