@@ -9,7 +9,8 @@
 - 印刷内容若本身使用相近颜色(如蓝色标题、红色印章),会一并被去除,
   属预期行为,由用户在前端自行勾选笔迹颜色控制。
 
-统一输出:清理后的 PNG 写入输出目录,文件名 ``<原名>_cleaned.png``。
+统一输出:清理后的 PNG 写入输出目录,文件名 ``<原名>_cleaned.png``,
+重名时追加序号(``<原名>_cleaned_1.png``)以免互相覆盖。
 """
 
 from __future__ import annotations
@@ -97,6 +98,16 @@ def remove_handwriting_image(
     return mask_ratio
 
 
+def _unique_cleaned_path(out: Path, stem: str) -> Path:
+    """同名结果已存在时追加序号,避免不同目录的同名图片互相覆盖。"""
+    candidate = out / f"{stem}_cleaned.png"
+    n = 1
+    while candidate.exists():
+        candidate = out / f"{stem}_cleaned_{n}.png"
+        n += 1
+    return candidate
+
+
 def remove_handwriting_batch(
     inputs: list[str],
     out_dir: str,
@@ -121,7 +132,7 @@ def remove_handwriting_batch(
         src = Path(path)
         if not src.is_file():
             raise OcrError("IO_NOT_FOUND", f"输入文件不存在: {path}")
-        dst = out / f"{src.stem}_cleaned.png"
+        dst = _unique_cleaned_path(out, src.stem)
         ratio = remove_handwriting_image(str(src), str(dst), colors, dilate_iters)
         outputs.append(str(dst))
         ratios.append(ratio)

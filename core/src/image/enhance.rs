@@ -165,7 +165,7 @@ pub fn scan_enhance(input: &Path, output: &Path, opts: &ScanOptions) -> Result<S
     })
 }
 
-/// 批量扫描增强,输出文件名与输入同名,写入 `out_dir`。
+/// 批量扫描增强,输出文件名与输入同名,写入 `out_dir`。重名时追加序号,避免覆盖。
 ///
 /// `progress`: 可选 `(current, total)` 回调,用于 Tauri 事件推送。
 pub fn scan_enhance_batch(
@@ -189,7 +189,7 @@ pub fn scan_enhance_batch(
             corrected += 1;
         }
         let name = input.file_stem().and_then(|s| s.to_str()).unwrap_or("scan");
-        let output = out_dir.join(format!("{name}_scan.png"));
+        let output = unique_output_path(out_dir, &format!("{name}_scan.png"));
         img.save(&output)
             .map_err(|e| CoreError::Image(e.to_string()))?;
         outputs.push(output);
@@ -203,6 +203,31 @@ pub fn scan_enhance_batch(
         corrected,
         elapsed_ms: start.elapsed().as_millis(),
     })
+}
+
+/// 同名输出已存在时在扩展名前追加序号:批量里不同目录的 `IMG_0001.jpg`
+/// 不会互相覆盖,也不会覆盖上一次的扫描结果。
+fn unique_output_path(dir: &Path, name: &str) -> PathBuf {
+    let candidate = dir.join(name);
+    if !candidate.exists() {
+        return candidate;
+    }
+    let path = Path::new(name);
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or(name);
+    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+    let mut n = 1;
+    loop {
+        let file = if ext.is_empty() {
+            format!("{stem}_{n}")
+        } else {
+            format!("{stem}_{n}.{ext}")
+        };
+        let candidate = dir.join(file);
+        if !candidate.exists() {
+            return candidate;
+        }
+        n += 1;
+    }
 }
 
 /// 多张图片(可选扫描增强)合成一个 PDF,每图一页,JPEG DCTDecode 嵌入。
@@ -1208,6 +1233,30 @@ mod tests {
             }
         }
         true
+    }
+
+    #[test]
+    fn batch_outputs_do_not_overwrite_existing_files() {
+        let dir = std::env::temp_dir().join(format!(
+            "pdfdv-enhance-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let first = unique_output_path(&dir, "photo_scan.png");
+        assert!(first.ends_with("photo_scan.png"));
+        std::fs::write(&first, b"x").unwrap();
+
+        // 同名的第二张(可能来自另一个目录)应自动改名为 photo_scan_1.png
+        let second = unique_output_path(&dir, "photo_scan.png");
+        assert!(second.ends_with("photo_scan_1.png"), "实际: {second:?}");
+        assert_ne!(first, second);
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

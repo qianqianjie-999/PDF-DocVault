@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { open } from '@tauri-apps/plugin-dialog'
 import PageHeader from '@/components/common/PageHeader.vue'
@@ -7,7 +6,8 @@ import { useSettingsStore } from '@/stores/settings'
 
 const settings = useSettingsStore()
 
-onMounted(() => settings.load())
+// App.vue 启动时已加载持久化设置;此处不再重复 load,
+// 否则未点保存就离开再回来,编辑内容会被旧值悄悄覆盖
 
 async function chooseOutputDir() {
   const dir = await open({
