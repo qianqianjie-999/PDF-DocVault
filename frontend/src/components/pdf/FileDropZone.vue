@@ -4,6 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import type { SelectedFile } from '@/stores/files'
 import { basename, matchesAccept } from '@/utils/file'
+import { pdfApi } from '@/api/pdf'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps<{
@@ -24,7 +25,16 @@ async function toSelectedFile(p: string): Promise<SelectedFile> {
   } catch {
     /* 读取失败时体积显示为 0,不影响后续处理 */
   }
-  return { path: p, name: basename(p), size }
+  let pages: number | undefined
+  // PDF 顺带取页数用于文件列表;加密或损坏时取不到则保持留空
+  if (p.toLowerCase().endsWith('.pdf')) {
+    try {
+      pages = (await pdfApi.pageCount(p)).count
+    } catch {
+      /* 页数仅用于展示,失败不影响添加文件 */
+    }
+  }
+  return { path: p, name: basename(p), size, pages }
 }
 
 async function pickFiles() {

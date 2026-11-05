@@ -7,6 +7,7 @@
 mod common;
 
 use common::{ensure_pdfium, make_pdf, page_count, pycrypt_available};
+use lopdf::dictionary;
 use pdf_docvault_core::pdf::{
     add_text_watermark, compress, decrypt, delete_pages, encrypt_aes256, extract_pages,
     insert_pages, merge, probe_encryption, reorder_pages, rotate_pages, split, EncryptOptions,
@@ -26,6 +27,28 @@ fn merge_pages_sum_correctly() {
     let stats = merge(&[a.clone(), b.clone()], &out).expect("合并应成功");
     assert_eq!(stats.pages, 5, "合并统计页数应为 5");
     assert_eq!(page_count(&out), 5, "2 页 + 3 页应合并为 5 页");
+}
+
+/// 需要打开密码的 PDF 不能静默合并:否则加密流会被原样写进新文档,产出乱码
+#[test]
+fn merge_locked_pdf_fails_clearly() {
+    let src = make_pdf(1);
+    let locked = src.parent().unwrap().join("locked.pdf");
+    let mut doc = lopdf::Document::load(&src).expect("加载测试 PDF");
+    // 伪造带 /Encrypt 的文档:空密码无法通过密钥校验,用于验证拒绝逻辑
+    let enc = doc.add_object(dictionary! {
+        "Filter" => "Standard",
+        "V" => 1,
+    });
+    doc.trailer.set("Encrypt", enc);
+    doc.save(&locked).expect("写出加密占位 PDF");
+
+    let out = src.parent().unwrap().join("merged-locked.pdf");
+    let err = merge(&[locked], &out).expect_err("加密文件应被拒绝");
+    assert!(
+        format!("{err}").contains("已加密"),
+        "错误信息应提示先解密,实际为: {err}"
+    );
 }
 
 // ===== 拆分 =====

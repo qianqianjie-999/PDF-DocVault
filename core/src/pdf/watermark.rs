@@ -46,6 +46,8 @@ pub fn add_text_watermark(
     output: &Path,
 ) -> Result<()> {
     let mut doc = Document::load(input)?;
+    // 新增的水印流是明文,加密文档需先解密,否则阅读器解出来的水印会是乱码
+    super::decrypt_if_needed(&mut doc)?;
 
     // 创建 Helvetica 字体对象
     let font_id = doc.add_object(dictionary! {
@@ -208,6 +210,8 @@ pub fn add_image_watermark(
     output: &Path,
 ) -> Result<()> {
     let mut doc = Document::load(input)?;
+    // 与文字水印同理:新增的 XObject 与 content 为明文
+    super::decrypt_if_needed(&mut doc)?;
 
     // 读取图片并转为 PDF XObject
     let img_bytes = std::fs::read(image_path)?;

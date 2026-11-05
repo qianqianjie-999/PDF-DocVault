@@ -44,10 +44,8 @@ pub fn merge(input_paths: &[PathBuf], output: &Path) -> Result<MergeStats> {
     let mut max_id = merged.max_id;
 
     for mut doc in docs {
-        // 解密(若加密),使用空密码尝试
-        if doc.is_encrypted() {
-            let _ = doc.decrypt("");
-        }
+        // 解密(若加密),空密码失败说明需要打开密码,直接报错而不是产出乱码文件
+        super::decrypt_if_needed(&mut doc)?;
         // 重新编号对象,避免与已合并对象冲突
         doc.renumber_objects_with(max_id + 1);
         max_id = doc.max_id;

@@ -41,7 +41,9 @@ pub struct SplitStats {
 /// 输出文件命名规则:`{原文件名}_{start}-{end}.pdf`,存放在 `output_dir`。
 pub fn split(input: &Path, mode: &SplitMode, output_dir: &Path) -> Result<SplitStats> {
     let start = std::time::Instant::now();
-    let doc = Document::load(input)?;
+    let mut doc = Document::load(input)?;
+    // 拆分需重建页面树,加密流无法原样带过去
+    super::decrypt_if_needed(&mut doc)?;
     let total = doc.get_pages().len() as u32;
     if total == 0 {
         return Err(CoreError::InvalidArgument("输入 PDF 没有页面".into()));

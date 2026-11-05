@@ -63,9 +63,7 @@ pub fn delete_pages(input: &Path, page_nums: &[u32], output: &Path) -> Result<()
 /// 由 prune_objects 清理未选页(手工逐页复制会遗漏 max_id,导致保存截断)。
 pub fn extract_pages(input: &Path, page_nums: &[u32], output: &Path) -> Result<()> {
     let mut doc = Document::load(input)?;
-    if doc.is_encrypted() {
-        let _ = doc.decrypt("");
-    }
+    super::decrypt_if_needed(&mut doc)?;
     let pages_map = doc.get_pages();
 
     let mut new_doc = Document::with_version("1.5");
@@ -102,7 +100,10 @@ pub fn extract_pages(input: &Path, page_nums: &[u32], output: &Path) -> Result<(
 /// 将 `input2` 的所有页面插入到 `input1` 的 `after_page` 之后
 pub fn insert_pages(input1: &Path, input2: &Path, after_page: u32, output: &Path) -> Result<()> {
     let mut doc1 = Document::load(input1)?;
-    let doc2 = Document::load(input2)?;
+    let mut doc2 = Document::load(input2)?;
+    // 任一输入需要打开密码时都无法安全重建页面树
+    super::decrypt_if_needed(&mut doc1)?;
+    super::decrypt_if_needed(&mut doc2)?;
     let pages1 = doc1.get_pages();
     let total1 = pages1.len() as u32;
     if after_page > total1 {
@@ -172,9 +173,7 @@ pub fn insert_pages(input1: &Path, input2: &Path, after_page: u32, output: &Path
 /// 与 merge/extract_pages 同款:整文档转移对象后按新顺序重建 Pages/Catalog。
 pub fn reorder_pages(input: &Path, new_order: &[u32], output: &Path) -> Result<()> {
     let mut doc = Document::load(input)?;
-    if doc.is_encrypted() {
-        let _ = doc.decrypt("");
-    }
+    super::decrypt_if_needed(&mut doc)?;
     let pages_map = doc.get_pages();
 
     let mut kids: Vec<Object> = Vec::new();
