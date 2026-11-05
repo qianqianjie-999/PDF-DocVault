@@ -98,6 +98,9 @@ function removeFile(idx: number) {
 
 function clearFiles() {
   files.value = []
+  // 清空选图后旧的合成结果不再对应当前内容,一并收起
+  resultPages.value = 0
+  resultElapsed.value = 0
 }
 
 function move(idx: number, delta: number) {

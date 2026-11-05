@@ -107,6 +107,8 @@ function removeFile(idx: number) {
 
 function clearFiles() {
   files.value = []
+  // 清空待转换列表后旧报告已无意义,避免误以为是当前任务的结果
+  report.value = null
 }
 
 async function pickOutputDir() {

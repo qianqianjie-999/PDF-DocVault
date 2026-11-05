@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import PageHeader from '@/components/common/PageHeader.vue'
@@ -46,6 +46,8 @@ async function doSearch() {
   try {
     searchResults.value = await documentApi.search(kw, fileType.value || undefined, SEARCH_LIMIT)
   } catch (e: any) {
+    // 失败时清空结果,避免新关键词下仍展示上一次搜索的命中项
+    searchResults.value = []
     ElMessage.error(`搜索失败: ${e?.message ?? e}`)
   } finally {
     searching.value = false
@@ -178,6 +180,12 @@ async function editTags(doc: Document) {
 }
 
 onMounted(load)
+
+onBeforeUnmount(() => {
+  // 离开页面时取消待触发的防抖搜索,避免请求回来后再弹错误提示
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = null
+})
 </script>
 
 <template>

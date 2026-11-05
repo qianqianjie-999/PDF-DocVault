@@ -210,6 +210,42 @@ fn text_watermark_keeps_pages() {
     assert_eq!(page_count(&out), 2, "水印不应改变页数");
 }
 
+/// 不透明度需注册为 ExtGState:否则 content 里的 /GS1 gs 引用不存在,滑块无效
+#[test]
+fn text_watermark_registers_opacity() {
+    let src = make_pdf(1);
+    let out = src.parent().unwrap().join("watermarked-opacity.pdf");
+    let opts = WatermarkOptions {
+        opacity: 0.25,
+        ..WatermarkOptions::default()
+    };
+    add_text_watermark(&src, "测试", &opts, &out).expect("添加水印应成功");
+
+    let doc = lopdf::Document::load(&out).expect("结果可重新加载");
+    let page_id = *doc.get_pages().get(&1).expect("第 1 页存在");
+    let page = doc.get_object(page_id).expect("页对象存在");
+    let resources = match page.as_dict().unwrap().get(b"Resources").unwrap() {
+        lopdf::Object::Reference(id) => doc.get_object(*id).expect("Resources 对象存在"),
+        other => other,
+    };
+    let ext = match resources.as_dict().unwrap().get(b"ExtGState").unwrap() {
+        lopdf::Object::Reference(id) => doc.get_object(*id).expect("ExtGState 对象存在"),
+        other => other,
+    };
+    let gs1 = match ext.as_dict().unwrap().get(b"GS1").unwrap() {
+        lopdf::Object::Reference(id) => doc.get_object(*id).expect("GS1 对象存在"),
+        other => other,
+    };
+    let ca = gs1
+        .as_dict()
+        .unwrap()
+        .get(b"CA")
+        .unwrap()
+        .as_float()
+        .unwrap();
+    assert!((ca - 0.25).abs() < 1e-6, "CA 应为 0.25,实际 {ca}");
+}
+
 /// 压缩:处理后可重新加载
 #[test]
 fn compress_reloads() {

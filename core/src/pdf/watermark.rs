@@ -54,6 +54,14 @@ pub fn add_text_watermark(
         "BaseFont" => "Helvetica",
         "Encoding" => "WinAnsiEncoding",
     });
+    // 透明度必须通过 ExtGState 的 CA/ca 生效;否则 content 里的 /GS1 gs
+    // 引用的是一份不存在的资源,阅读器会直接忽略,滑块形同虚设
+    let opacity = opts.opacity.clamp(0.0, 1.0);
+    let gs_id = doc.add_object(dictionary! {
+        "Type" => "ExtGState",
+        "CA" => opacity,
+        "ca" => opacity,
+    });
 
     let pages = doc.get_pages();
     for (_pn, page_id) in pages {
@@ -62,8 +70,9 @@ pub fn add_text_watermark(
         let stream = Stream::new(dictionary! {}, content);
         let content_id = doc.add_object(stream);
 
-        // 在页面 Resources 中注册字体
+        // 在页面 Resources 中注册字体与透明度状态
         ensure_resources_font(&mut doc, page_id, b"F1", font_id)?;
+        ensure_resources_entry(&mut doc, page_id, b"ExtGState", b"GS1", gs_id)?;
 
         // 追加到页面 /Contents
         append_content(&mut doc, page_id, content_id)?;
@@ -112,12 +121,23 @@ fn build_text_watermark_content(text: &str, opts: &WatermarkOptions) -> Vec<u8> 
 }
 
 /// 确保页面 Resources 中注册了指定字体。
-/// 处理 Resources 为引用或内联字典两种情况(后者抽出为独立对象)。
 fn ensure_resources_font(
     doc: &mut Document,
     page_id: ObjectId,
     font_key: &[u8],
     font_id: ObjectId,
+) -> Result<()> {
+    ensure_resources_entry(doc, page_id, b"Font", font_key, font_id)
+}
+
+/// 在页面 Resources 的指定子字典(如 Font / ExtGState / XObject)下注册一个资源名。
+/// 处理 Resources 为引用或内联字典两种情况(后者抽出为独立对象)。
+fn ensure_resources_entry(
+    doc: &mut Document,
+    page_id: ObjectId,
+    category: &[u8],
+    name: &[u8],
+    object_id: ObjectId,
 ) -> Result<()> {
     // 先取出 Resources 的引用方式,避免在持有 page 可变引用时调用 doc.add_object
     let resources_ref = {
@@ -143,12 +163,11 @@ fn ensure_resources_font(
 
     let res_obj = doc.get_object_mut(resources_id)?;
     let res_dict = res_obj.as_dict_mut()?;
-    if res_dict.get(b"Font").is_err() {
-        res_dict.set("Font", Object::Dictionary(dictionary! {}));
+    if res_dict.get(category).is_err() {
+        res_dict.set(category, Object::Dictionary(dictionary! {}));
     }
-    let font_obj = res_dict.get_mut(b"Font")?;
-    let font_dict = font_obj.as_dict_mut()?;
-    font_dict.set(font_key, Object::Reference(font_id));
+    let entry = res_dict.get_mut(category)?;
+    entry.as_dict_mut()?.set(name, Object::Reference(object_id));
     Ok(())
 }
 
@@ -251,34 +270,5 @@ fn ensure_resources_xobject(
     name: &[u8],
     xobject_id: ObjectId,
 ) -> Result<()> {
-    // 先取出 Resources 的引用方式,避免在持有 page 可变引用时调用 doc.add_object
-    let resources_ref = {
-        let page_obj = doc.get_object(page_id)?;
-        let dict = page_obj.as_dict()?;
-        dict.get(b"Resources")
-            .map_err(|_| CoreError::Internal("页面缺少 Resources".into()))?
-            .clone()
-    };
-
-    let resources_id = match resources_ref {
-        Object::Reference(id) => id,
-        Object::Dictionary(_) => {
-            let id = doc.add_object(resources_ref);
-            let page_obj = doc.get_object_mut(page_id)?;
-            let dict = page_obj.as_dict_mut()?;
-            dict.set("Resources", Object::Reference(id));
-            id
-        }
-        _ => return Err(CoreError::Internal("Resources 类型异常".into())),
-    };
-
-    let res_obj = doc.get_object_mut(resources_id)?;
-    let res_dict = res_obj.as_dict_mut()?;
-    if res_dict.get(b"XObject").is_err() {
-        res_dict.set("XObject", Object::Dictionary(dictionary! {}));
-    }
-    let xo_obj = res_dict.get_mut(b"XObject")?;
-    let xo_dict = xo_obj.as_dict_mut()?;
-    xo_dict.set(name, Object::Reference(xobject_id));
-    Ok(())
+    ensure_resources_entry(doc, page_id, b"XObject", name, xobject_id)
 }
