@@ -83,6 +83,23 @@ function segments(name: string, kw: string): { text: string; hit: boolean }[] {
   return out.length ? out : [{ text: name, hit: false }]
 }
 
+/** 标签存储为 JSON 数组字符串;解析失败时按原文展示 */
+function tagList(tags: string | null): string[] {
+  if (!tags) return []
+  try {
+    const parsed = JSON.parse(tags)
+    return Array.isArray(parsed) ? parsed.filter((t) => typeof t === 'string' && t) : [tags]
+  } catch {
+    return [tags]
+  }
+}
+
+/** 标签是否命中搜索关键词(大小写不敏感) */
+function tagHit(tag: string, kw: string): boolean {
+  const k = kw.trim().toLowerCase()
+  return !!k && tag.toLowerCase().includes(k)
+}
+
 async function load() {
   loading.value = true
   try {
@@ -182,9 +199,19 @@ onMounted(load)
         <el-table-column label="页数" width="80">
           <template #default="{ row }">{{ row.page_count ?? '-' }}</template>
         </el-table-column>
-        <el-table-column label="标签" width="160">
+        <el-table-column label="标签" min-width="160">
           <template #default="{ row }">
-            <span v-if="row.tags">{{ row.tags }}</span>
+            <template v-if="tagList(row.tags).length">
+              <el-tag
+                v-for="(t, ti) in tagList(row.tags)"
+                :key="ti"
+                size="small"
+                :type="tagHit(t, keyword) ? 'warning' : 'info'"
+                class="tag-chip"
+              >
+                {{ t }}
+              </el-tag>
+            </template>
             <span v-else class="muted">-</span>
           </template>
         </el-table-column>
@@ -214,6 +241,9 @@ onMounted(load)
 <style scoped lang="scss">
 .muted {
   color: #c0c4cc;
+}
+.tag-chip {
+  margin: 2px 4px 2px 0;
 }
 .search-bar {
   display: flex;

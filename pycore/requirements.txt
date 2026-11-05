@@ -8,3 +8,11 @@ rapidocr>=2.0
 onnxruntime>=1.17
 # Word→PDF WPS CLI 回退引擎的质量后处理(内嵌图片按 DPI 降采样 + JPEG 重压缩)
 pikepdf>=8.0
+# 图片质量后处理直接使用 PIL(虽然 pikepdf 会带上,但显式声明避免传递依赖变化)
+Pillow>=10.0
+# 拍图转 Word/Excel(docx_builder / xlsx_builder)
+python-docx>=1.1
+openpyxl>=3.1
+# 去手写与表格识别(scan/handwriting.py)
+opencv-python-headless>=4.9
+numpy>=1.26
