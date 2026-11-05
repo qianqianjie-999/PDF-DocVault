@@ -94,6 +94,10 @@ pub async fn list_documents(
             sql.push_str(" AND file_type = ?");
             p.push(Box::new(t.clone()));
         }
+        if let Some(tag) = &params.tag {
+            sql.push_str(" AND tags LIKE ?");
+            p.push(Box::new(format!("%\"{}\"%", tag)));
+        }
         let refs: Vec<&dyn rusqlite::ToSql> = p.iter().map(|b| b.as_ref()).collect();
         let n: i64 = conn.query_row(&sql, refs.as_slice(), |r| r.get(0))?;
         Ok(n as u32)

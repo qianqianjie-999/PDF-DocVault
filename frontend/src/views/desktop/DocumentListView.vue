@@ -21,6 +21,16 @@ const searching = ref(false)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 const FILE_TYPES = ['pdf', 'doc', 'docx', 'png', 'jpg', 'jpeg']
+// 后端 search 的 limit 上限,与 search_commands 的 clamp 保持一致
+const SEARCH_LIMIT = 100
+
+// 关键词按空白拆分:后端每个 token 都要求命中(AND),前端逐 token 高亮才与结果一致
+const keywordTokens = computed(() =>
+  keyword.value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t) => t.toLowerCase()),
+)
 
 // 展示行:搜索态显示命中结果,否则显示分页列表
 const rows = computed(() => searchResults.value ?? documents.value)
@@ -34,7 +44,7 @@ async function doSearch() {
   }
   searching.value = true
   try {
-    searchResults.value = await documentApi.search(kw, fileType.value || undefined, 100)
+    searchResults.value = await documentApi.search(kw, fileType.value || undefined, SEARCH_LIMIT)
   } catch (e: any) {
     ElMessage.error(`搜索失败: ${e?.message ?? e}`)
   } finally {
@@ -63,24 +73,29 @@ function clearSearch() {
   void load()
 }
 
-/** 文件名关键词高亮分段(大小写不敏感) */
-function segments(name: string, kw: string): { text: string; hit: boolean }[] {
-  if (!kw) return [{ text: name, hit: false }]
+/** 文件名关键词高亮分段:按 token 标记命中字符,再合并为连续段 */
+function segments(name: string, tokens: string[]): { text: string; hit: boolean }[] {
+  if (!tokens.length) return [{ text: name, hit: false }]
   const lower = name.toLowerCase()
-  const k = kw.toLowerCase()
-  const out: { text: string; hit: boolean }[] = []
-  let i = 0
-  for (;;) {
-    const idx = lower.indexOf(k, i)
-    if (idx < 0) {
-      if (i < name.length) out.push({ text: name.slice(i), hit: false })
-      break
+  const hitMask = Array<boolean>(name.length).fill(false)
+  for (const t of tokens) {
+    let i = 0
+    for (;;) {
+      const idx = lower.indexOf(t, i)
+      if (idx < 0) break
+      for (let j = idx; j < idx + t.length; j++) hitMask[j] = true
+      i = idx + t.length
     }
-    if (idx > i) out.push({ text: name.slice(i, idx), hit: false })
-    out.push({ text: name.slice(idx, idx + k.length), hit: true })
-    i = idx + k.length
   }
-  return out.length ? out : [{ text: name, hit: false }]
+  const out: { text: string; hit: boolean }[] = []
+  for (let i = 0; i < name.length; ) {
+    const hit = hitMask[i]
+    let j = i + 1
+    while (j < name.length && hitMask[j] === hit) j++
+    out.push({ text: name.slice(i, j), hit })
+    i = j
+  }
+  return out
 }
 
 /** 标签存储为 JSON 数组字符串;解析失败时按原文展示 */
@@ -94,10 +109,10 @@ function tagList(tags: string | null): string[] {
   }
 }
 
-/** 标签是否命中搜索关键词(大小写不敏感) */
-function tagHit(tag: string, kw: string): boolean {
-  const k = kw.trim().toLowerCase()
-  return !!k && tag.toLowerCase().includes(k)
+/** 标签是否命中任一搜索 token(大小写不敏感) */
+function tagHit(tag: string, tokens: string[]): boolean {
+  const lower = tag.toLowerCase()
+  return tokens.some((t) => lower.includes(t))
 }
 
 async function load() {
@@ -118,28 +133,38 @@ async function load() {
 async function remove(doc: Document) {
   try {
     await ElMessageBox.confirm(`确认删除文档「${doc.name}」?`, '确认', { type: 'warning' })
+  } catch {
+    return // 用户取消
+  }
+  try {
     await documentApi.delete(doc.id)
     ElMessage.success('已删除')
     // 搜索态下删除后刷新搜索结果,否则刷新列表
     if (searchResults.value) await doSearch()
     else await load()
-  } catch {
-    /* cancelled */
+  } catch (e: any) {
+    ElMessage.error(`删除失败: ${e?.message ?? e}`)
   }
 }
 
 async function editTags(doc: Document) {
+  let value: string
   try {
-    const { value } = await ElMessageBox.prompt('标签(JSON 数组,如 ["发票","2026"])', '编辑标签', {
+    const res = await ElMessageBox.prompt('标签(JSON 数组,如 ["发票","2026"])', '编辑标签', {
       inputValue: doc.tags || '[]',
     })
+    value = res.value
+  } catch {
+    return // 用户取消
+  }
+  try {
     await documentApi.tag(doc.id, value || '[]')
     ElMessage.success('已更新')
     // 标签参与索引,搜索态下同步刷新
     if (searchResults.value) await doSearch()
     else await load()
-  } catch {
-    /* cancelled */
+  } catch (e: any) {
+    ElMessage.error(`标签更新失败: ${e?.message ?? e}`)
   }
 }
 
@@ -173,6 +198,9 @@ onMounted(load)
       </el-select>
       <span v-if="searchResults" class="search-meta">
         找到 {{ searchResults.length }} 条
+        <span v-if="searchResults.length >= SEARCH_LIMIT" class="search-limit">
+          (已达上限,请细化关键词)
+        </span>
         <el-button text size="small" @click="clearSearch">清除搜索</el-button>
       </span>
     </div>
@@ -182,7 +210,7 @@ onMounted(load)
         <el-table-column type="index" label="#" width="50" />
         <el-table-column prop="name" label="文件名" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">
-            <template v-for="(seg, si) in segments(row.name, keyword.trim())" :key="si">
+            <template v-for="(seg, si) in segments(row.name, keywordTokens)" :key="si">
               <mark v-if="seg.hit" class="hl">{{ seg.text }}</mark>
               <template v-else>{{ seg.text }}</template>
             </template>
@@ -206,7 +234,7 @@ onMounted(load)
                 v-for="(t, ti) in tagList(row.tags)"
                 :key="ti"
                 size="small"
-                :type="tagHit(t, keyword) ? 'warning' : 'info'"
+                :type="tagHit(t, keywordTokens) ? 'warning' : 'info'"
                 class="tag-chip"
               >
                 {{ t }}
@@ -260,6 +288,9 @@ onMounted(load)
   .search-meta {
     font-size: 13px;
     color: #606266;
+    .search-limit {
+      color: #e6a23c;
+    }
   }
 }
 .hl {
