@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { onUnmounted } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { useFilesStore, type SelectedFile } from '@/stores/files'
-import { basename } from '@/utils/file'
+import { basename, matchesAccept } from '@/utils/file'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps<{
@@ -40,27 +41,43 @@ async function pickFiles() {
   emit('select', items)
 }
 
-// 监听 Tauri 窗口拖拽事件
+// 监听 Tauri 窗口拖拽事件;组件卸载时注销,避免跨页面重复监听
+let unlisten: (() => void) | null = null
+let disposed = false
+
 async function listenDrop() {
   try {
     const webview = getCurrentWebview()
-    webview.onDragDropEvent(async (event) => {
-      if (event.payload.type === 'drop') {
-        const paths = event.payload.paths
-        const items: SelectedFile[] = paths.map((p) => ({
-          path: p,
-          name: basename(p),
-          size: 0,
-        }))
-        filesStore.addFiles(items)
-        emit('select', items)
+    const stop = await webview.onDragDropEvent(async (event) => {
+      if (event.payload.type !== 'drop') return
+      // 拖拽路径与选择框保持一致的扩展名过滤
+      const paths = event.payload.paths.filter((p) => matchesAccept(p, props.accept))
+      if (!paths.length) {
+        if (event.payload.paths.length) ElMessage.warning('不支持的文件类型')
+        return
       }
+      const items: SelectedFile[] = paths.map((p) => ({
+        path: p,
+        name: basename(p),
+        size: 0,
+      }))
+      filesStore.addFiles(items)
+      emit('select', items)
     })
+    // 卸载动作可能先于注册完成,此时直接注销
+    if (disposed) stop()
+    else unlisten = stop
   } catch (e) {
     // 非 Tauri 环境(浏览器)忽略
   }
 }
 listenDrop()
+
+onUnmounted(() => {
+  disposed = true
+  unlisten?.()
+  unlisten = null
+})
 </script>
 
 <template>

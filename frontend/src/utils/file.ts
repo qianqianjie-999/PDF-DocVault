@@ -16,6 +16,20 @@ export function basename(path: string): string {
   return parts[parts.length - 1] || path
 }
 
+/** 按 accept 列表(如 "pdf" 或 "png,jpg,jpeg")判断扩展名是否匹配 */
+export function matchesAccept(path: string, accept?: string): boolean {
+  if (!accept) return true
+  const name = basename(path)
+  const idx = name.lastIndexOf('.')
+  if (idx < 0) return false
+  const ext = name.slice(idx + 1).toLowerCase()
+  return accept
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(ext)
+}
+
 export function dirname(path: string): string {
   const normalized = path.replace(/\\/g, '/')
   const idx = normalized.lastIndexOf('/')

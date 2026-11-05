@@ -194,7 +194,7 @@ async function exportTxt() {
   const first = files.value[0]?.name ?? 'ocr'
   const defaultName = first.replace(/\.[^.]+$/, '') + '-ocr.txt'
   const out = await save({
-    defaultPath: defaultName,
+    defaultPath: settings.resolveOutput(defaultName),
     filters: [{ name: '文本', extensions: ['txt'] }],
   })
   if (!out) return

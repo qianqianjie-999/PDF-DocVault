@@ -252,7 +252,7 @@ onMounted(refresh)
     <el-collapse v-model="activePanels" class="extra">
       <el-collapse-item title="换了电脑 / 重装了系统？" name="rebind">
         <p class="hint">
-          授权绑定本机设备指纹。换机或重装系统后，在上面的输入框填入**原来那张卡密**，
+          授权绑定本机设备指纹。换机或重装系统后，在上面的输入框填入「原来那张卡密」，
           系统会提示是否把授权转移到本机（会消耗 1 次换机机会，默认共 3 次）。
           次数用完了请带上下面的设备指纹联系卖家。
         </p>
