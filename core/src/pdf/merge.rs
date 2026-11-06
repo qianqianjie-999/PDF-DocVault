@@ -41,6 +41,7 @@ pub fn merge(input_paths: &[PathBuf], output: &Path) -> Result<MergeStats> {
     let mut merged = Document::with_version("1.5");
     let pages_id: ObjectId = merged.new_object_id();
     let mut kids: Vec<Object> = Vec::new();
+    let mut page_ids: Vec<ObjectId> = Vec::new();
     let mut max_id = merged.max_id;
 
     for mut doc in docs {
@@ -60,8 +61,14 @@ pub fn merge(input_paths: &[PathBuf], output: &Path) -> Result<MergeStats> {
         for (_page_no, page_id) in pages {
             // 页面对象已转移,直接引用
             kids.push(Object::Reference(page_id));
+            page_ids.push(page_id);
         }
     }
+
+    // 各输入的页面树可能是嵌套的:先把继承属性落到页面自身,再统一挂到新的根节点,
+    // 否则中间节点被 prune 掉后页面会丢 MediaBox/Resources,旧树也仍被页面 /Parent 引用
+    super::inherit_page_attributes(&mut merged, &page_ids);
+    super::reparent_pages(&mut merged, pages_id, &page_ids);
 
     let count = kids.len() as u32;
     merged.objects.insert(

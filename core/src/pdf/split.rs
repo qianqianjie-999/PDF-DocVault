@@ -17,7 +17,9 @@ pub struct PageRange {
 
 /// 拆分模式
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "kind")]
+// 前端 SplitMode 字面量是 by_ranges / every_n_pages;
+// 不写 rename_all 时 serde 只认 ByRanges / EveryNPages,拆分命令必然反序列化失败
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SplitMode {
     /// 按显式页码范围拆分
     ByRanges { ranges: Vec<PageRange> },
@@ -145,8 +147,10 @@ fn extract_range_to_file(doc: &Document, range: &PageRange, out: &Path) -> Resul
 
     let pages_map = doc.get_pages();
     let mut kids: Vec<Object> = Vec::new();
+    let mut page_ids: Vec<ObjectId> = Vec::new();
     for p in range.start..=range.end {
         if let Some(&page_id) = pages_map.get(&p) {
+            page_ids.push(page_id);
             kids.push(Object::Reference(page_id));
         }
     }
@@ -157,11 +161,15 @@ fn extract_range_to_file(doc: &Document, range: &PageRange, out: &Path) -> Resul
         )));
     }
 
+    // 先把中间节点上的版式属性落到页面自身,再改 /Parent 指向新根,
+    // 否则 prune_objects 清掉旧节点后页面会丢失 MediaBox/Resources
+    super::inherit_page_attributes(&mut new_doc, &page_ids);
     let pages_id = new_doc.add_object(dictionary! {
         "Type" => "Pages",
         "Count" => kids.len() as u32,
         "Kids" => kids,
     });
+    super::reparent_pages(&mut new_doc, pages_id, &page_ids);
     let catalog_id = new_doc.add_object(dictionary! {
         "Type" => "Catalog",
         "Pages" => pages_id,
@@ -220,6 +228,32 @@ fn dict_iter(dict: &lopdf::Dictionary) -> impl Iterator<Item = (&[u8], &Object)>
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// 前端发送的是 { kind: 'by_ranges' } / { kind: 'every_n_pages' },
+    /// serde 必须按 snake_case 识别,否则拆分命令在反序列化阶段就失败
+    #[test]
+    fn split_mode_accepts_frontend_kind_names() {
+        let every: SplitMode = serde_json::from_str(r#"{"kind":"every_n_pages","n":3}"#)
+            .expect("every_n_pages 应可反序列化");
+        match every {
+            SplitMode::EveryNPages { n } => assert_eq!(n, 3),
+            _ => panic!("kind 解析到了错误分支"),
+        }
+
+        let ranges: SplitMode =
+            serde_json::from_str(r#"{"kind":"by_ranges","ranges":[{"start":1,"end":10}]}"#)
+                .expect("by_ranges 应可反序列化");
+        match ranges {
+            SplitMode::ByRanges { ranges } => {
+                assert_eq!(ranges.len(), 1);
+                assert_eq!(ranges[0].start, 1);
+                assert_eq!(ranges[0].end, 10);
+            }
+            _ => panic!("kind 解析到了错误分支"),
+        }
+    }
+
     #[test]
     fn split_every_n() {
         let tmp = tempfile::tempdir().unwrap();

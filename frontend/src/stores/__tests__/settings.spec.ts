@@ -66,6 +66,31 @@ describe('useSettingsStore', () => {
     expect(s2.autoOpenOutput).toBe(false)
   })
 
+  it('load 忽略被改坏的类型', () => {
+    localStorage.setItem(
+      'pdf-docvault-settings',
+      JSON.stringify({
+        defaultOutputDir: 42,
+        defaultDpi: 'abc',
+        defaultImageFormat: 'bmp',
+        ocrLanguage: null,
+      }),
+    )
+    const s = useSettingsStore()
+    s.load()
+    expect(s.defaultOutputDir).toBe('')
+    expect(s.defaultDpi).toBe(150)
+    expect(s.defaultImageFormat).toBe('png')
+    expect(s.ocrLanguage).toBe('ch')
+  })
+
+  it('load 拒绝越界 DPI,保留默认值', () => {
+    localStorage.setItem('pdf-docvault-settings', JSON.stringify({ defaultDpi: 10000 }))
+    const s = useSettingsStore()
+    s.load()
+    expect(s.defaultDpi).toBe(150)
+  })
+
   it('autoOpenOutput 持久化 true 往返', () => {
     const s = useSettingsStore()
     s.autoOpenOutput = true

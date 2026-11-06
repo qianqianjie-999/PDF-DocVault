@@ -89,6 +89,14 @@ const compressLevel = ref(6)
 const imagesDpi = ref(settings.defaultDpi)
 const imagesFormat = ref<'png' | 'jpg' | 'webp'>(settings.defaultImageFormat)
 const imagesPages = ref('') // 转图片页码范围输入,留空 = 整本导出
+// 设置页改默认值后同步过来:面板只挂载一次,不监听的话改完设置回来仍是旧值
+watch(
+  () => [settings.defaultDpi, settings.defaultImageFormat] as const,
+  ([dpi, fmt]) => {
+    imagesDpi.value = dpi
+    imagesFormat.value = fmt
+  },
+)
 
 // 需要单文件的操作
 const needsSingleFile = computed(() =>
@@ -172,6 +180,9 @@ async function run() {
   running.value = true
   showProgress.value = true
   progress.value = 0
+  // 清空上一轮计数,否则转图片之后再执行其他操作会显示残留的「x / y」
+  current.value = 0
+  total.value = 0
   try {
     switch (op.value) {
       case 'merge': {
@@ -290,6 +301,10 @@ async function run() {
         break
       }
       case 'watermark': {
+        if (!watermarkText.value.trim()) {
+          ElMessage.warning('请输入水印文本')
+          break
+        }
         const first = files[0].path
         const out = await pickOutput(`watermarked-${basename(first)}`)
         if (!out) break

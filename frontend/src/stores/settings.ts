@@ -15,10 +15,22 @@ export const useSettingsStore = defineStore('settings', () => {
     if (saved) {
       try {
         const obj = JSON.parse(saved)
-        if (obj.defaultOutputDir) defaultOutputDir.value = obj.defaultOutputDir
-        if (obj.defaultDpi) defaultDpi.value = obj.defaultDpi
-        if (obj.defaultImageFormat) defaultImageFormat.value = obj.defaultImageFormat
-        if (obj.ocrLanguage) ocrLanguage.value = obj.ocrLanguage
+        // localStorage 可能被旧版本或手工改坏:逐字段校验类型与取值范围,
+        // 否则字符串/越界 DPI 会直接流进输入框与后端参数
+        if (!obj || typeof obj !== 'object') return
+        if (typeof obj.defaultOutputDir === 'string') defaultOutputDir.value = obj.defaultOutputDir
+        if (
+          typeof obj.defaultDpi === 'number' &&
+          Number.isFinite(obj.defaultDpi) &&
+          obj.defaultDpi >= 72 &&
+          obj.defaultDpi <= 600
+        ) {
+          defaultDpi.value = obj.defaultDpi
+        }
+        if (['png', 'jpg', 'webp'].includes(obj.defaultImageFormat)) {
+          defaultImageFormat.value = obj.defaultImageFormat
+        }
+        if (typeof obj.ocrLanguage === 'string') ocrLanguage.value = obj.ocrLanguage
         // 布尔字段需显式判断,if(obj.x) 会把 false 误判为缺省
         if (typeof obj.autoOpenOutput === 'boolean') autoOpenOutput.value = obj.autoOpenOutput
       } catch {

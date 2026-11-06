@@ -1,6 +1,6 @@
 //! PDF 页面操作:旋转/删除/插入/提取/重排
 
-use lopdf::{dictionary, Document, Object};
+use lopdf::{dictionary, Document, Object, ObjectId};
 use std::path::Path;
 
 use crate::errors::{CoreError, Result};
@@ -23,6 +23,13 @@ pub fn rotate_pages(input: &Path, page_nums: &[u32], degrees: u32, output: &Path
     };
     targets.sort_unstable();
     targets.dedup();
+    // 先把继承自中间 Pages 节点的 /Rotate 落到页面自身,再累加;
+    // 否则读到的是 0,原有旋转会被本次操作覆盖
+    let target_ids: Vec<ObjectId> = targets
+        .iter()
+        .map(|&pn| pages.get(&pn).copied().ok_or(CoreError::PageNotFound(pn)))
+        .collect::<Result<_>>()?;
+    super::inherit_page_attributes(&mut doc, &target_ids);
     for pn in targets {
         let page_id = *pages.get(&pn).ok_or(CoreError::PageNotFound(pn))?;
         let page_obj = doc.get_object_mut(page_id)?;
@@ -32,7 +39,12 @@ pub fn rotate_pages(input: &Path, page_nums: &[u32], degrees: u32, output: &Path
             .ok()
             .and_then(|o| o.as_i64().ok())
             .unwrap_or(0);
-        dict.set("Rotate", Object::Integer((cur + degrees as i64) % 360));
+        // 负值 /Rotate(部分工具会写 -90/-180)用 % 会留下负角度,
+        // 阅读器行为不一致;统一归一化到 0..360
+        dict.set(
+            "Rotate",
+            Object::Integer((cur + degrees as i64).rem_euclid(360)),
+        );
     }
     doc.save(output)?;
     Ok(())
@@ -41,6 +53,9 @@ pub fn rotate_pages(input: &Path, page_nums: &[u32], degrees: u32, output: &Path
 /// 删除指定页面
 pub fn delete_pages(input: &Path, page_nums: &[u32], output: &Path) -> Result<()> {
     let mut doc = Document::load(input)?;
+    // 删除后会 prune/renumber,对象号变化会让加密流无法解密,
+    // 必须先解密,不能把一份内容全乱的加密壳交给用户
+    super::decrypt_if_needed(&mut doc)?;
     if page_nums.is_empty() {
         return Err(CoreError::InvalidArgument("未指定要删除的页面".into()));
     }
@@ -83,19 +98,28 @@ pub fn extract_pages(input: &Path, page_nums: &[u32], output: &Path) -> Result<(
     new_doc.max_id = doc.max_id;
 
     let mut kids: Vec<Object> = Vec::new();
+    let mut page_ids: Vec<ObjectId> = Vec::new();
+    // 去重:同一页只提取一次,重复引用会让页面树出现两个指向同一页面对象的叶子
+    let mut seen = std::collections::HashSet::new();
     for &pn in page_nums {
+        if !seen.insert(pn) {
+            continue;
+        }
         let &page_id = pages_map.get(&pn).ok_or(CoreError::PageNotFound(pn))?;
         kids.push(Object::Reference(page_id));
+        page_ids.push(page_id);
     }
     if kids.is_empty() {
         return Err(CoreError::InvalidArgument("未指定要提取的页面".into()));
     }
 
+    super::inherit_page_attributes(&mut new_doc, &page_ids);
     let pages_id = new_doc.add_object(dictionary! {
         "Type" => "Pages",
         "Count" => kids.len() as u32,
         "Kids" => kids,
     });
+    super::reparent_pages(&mut new_doc, pages_id, &page_ids);
     let catalog_id = new_doc.add_object(dictionary! {
         "Type" => "Catalog",
         "Pages" => pages_id,
@@ -143,27 +167,29 @@ pub fn insert_pages(input1: &Path, input2: &Path, after_page: u32, output: &Path
         .map_err(|_| CoreError::Internal("无法找到 Pages 根节点".into()))?;
 
     let mut new_kids: Vec<Object> = Vec::new();
-    // 修正插入页的 /Parent:原本指向 doc2 的 Pages 根(prune 后会消失),改指 doc1 的 Pages 根
-    for id in pages2.values() {
-        if let Some(page) = doc1.objects.get_mut(id) {
-            if let Ok(dict) = page.as_dict_mut() {
-                dict.set("Parent", Object::Reference(pages_id));
-            }
-        }
-    }
+    let mut all_ids: Vec<ObjectId> = Vec::new();
+    // 修正插入页的 /Parent:原本指向 doc2 的 Pages 根(prune 后会消失),改指 doc1 的 Pages 根;
+    // doc1 自身若是嵌套页面树,叶子同样要提升到根下,所以统一处理两边的页面
     for p in 1..=after_page {
         if let Some(&id) = pages1.get(&p) {
             new_kids.push(Object::Reference(id));
+            all_ids.push(id);
         }
     }
-    for (_pn, id) in pages2 {
-        new_kids.push(Object::Reference(id));
+    for id in pages2.values() {
+        new_kids.push(Object::Reference(*id));
+        all_ids.push(*id);
     }
     for p in (after_page + 1)..=total1 {
         if let Some(&id) = pages1.get(&p) {
             new_kids.push(Object::Reference(id));
+            all_ids.push(id);
         }
     }
+
+    // 顺序很重要:先在原页面树里取继承属性,再把 /Parent 全部改指 doc1 根
+    super::inherit_page_attributes(&mut doc1, &all_ids);
+    super::reparent_pages(&mut doc1, pages_id, &all_ids);
 
     let pages_dict = doc1.get_object_mut(pages_id)?;
     pages_dict
@@ -187,9 +213,11 @@ pub fn reorder_pages(input: &Path, new_order: &[u32], output: &Path) -> Result<(
     let pages_map = doc.get_pages();
 
     let mut kids: Vec<Object> = Vec::new();
+    let mut page_ids: Vec<ObjectId> = Vec::new();
     for &pn in new_order {
         let &page_id = pages_map.get(&pn).ok_or(CoreError::PageNotFound(pn))?;
         kids.push(Object::Reference(page_id));
+        page_ids.push(page_id);
     }
     if kids.is_empty() {
         return Err(CoreError::InvalidArgument("未指定任何页面".into()));
@@ -201,11 +229,13 @@ pub fn reorder_pages(input: &Path, new_order: &[u32], output: &Path) -> Result<(
     }
     new_doc.max_id = doc.max_id;
 
+    super::inherit_page_attributes(&mut new_doc, &page_ids);
     let pages_id = new_doc.add_object(dictionary! {
         "Type" => "Pages",
         "Count" => kids.len() as u32,
         "Kids" => kids,
     });
+    super::reparent_pages(&mut new_doc, pages_id, &page_ids);
     let catalog_id = new_doc.add_object(dictionary! {
         "Type" => "Catalog",
         "Pages" => pages_id,

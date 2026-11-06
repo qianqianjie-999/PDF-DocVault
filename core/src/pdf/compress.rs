@@ -64,6 +64,9 @@ pub fn compress(input: &Path, output: &Path, level: u8) -> Result<CompressStats>
     let original_size = std::fs::metadata(input)?.len();
 
     let mut doc = Document::load(input)?;
+    // 与其他页面级操作一致:加密文档的流是按对象号派生密钥的,
+    // 这里会 prune/renumber 并重编码图片,不先解密会产出无法打开的成品
+    super::decrypt_if_needed(&mut doc)?;
     let page_count = doc.get_pages().len();
     doc.prune_objects();
     doc.renumber_objects();
@@ -88,6 +91,7 @@ pub fn compress(input: &Path, output: &Path, level: u8) -> Result<CompressStats>
         tracing::warn!("压缩后校验失败(页数不一致或无法加载),回退为纯结构压缩");
         fell_back = true;
         let mut safe = Document::load(input)?;
+        super::decrypt_if_needed(&mut safe)?;
         safe.prune_objects();
         safe.renumber_objects();
         safe.compress();

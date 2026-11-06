@@ -45,6 +45,12 @@ pub fn add_text_watermark(
     opts: &WatermarkOptions,
     output: &Path,
 ) -> Result<()> {
+    // 空白文本会生成一条没有 Tj 文本的 content stream:界面提示「添加成功」,
+    // 成品却看不出任何水印。与其静默产出无效果的文件,不如直接拒绝。
+    if text.trim().is_empty() {
+        return Err(CoreError::InvalidArgument("水印文本不能为空".into()));
+    }
+
     let mut doc = Document::load(input)?;
     // 新增的水印流是明文,加密文档需先解密,否则阅读器解出来的水印会是乱码
     super::decrypt_if_needed(&mut doc)?;
@@ -66,6 +72,10 @@ pub fn add_text_watermark(
     });
 
     let pages = doc.get_pages();
+    // 页面可能把 /Resources 写在中间 Pages 节点上由叶子页继承,
+    // 不先落到页面自身,注册水印资源时会误判「页面缺少 Resources」而整份失败
+    let page_ids: Vec<ObjectId> = pages.values().copied().collect();
+    super::inherit_page_attributes(&mut doc, &page_ids);
     for (_pn, page_id) in pages {
         // 构造水印 content stream
         let content = build_text_watermark_content(text, opts);
@@ -145,9 +155,11 @@ fn ensure_resources_entry(
     let resources_ref = {
         let page_obj = doc.get_object(page_id)?;
         let dict = page_obj.as_dict()?;
+        // 规范允许页面不写 /Resources(等同于空资源集),
+        // 这里补一个空字典,不能因为缺这一项就让整份水印失败
         dict.get(b"Resources")
-            .map_err(|_| CoreError::Internal("页面缺少 Resources".into()))?
-            .clone()
+            .cloned()
+            .unwrap_or(Object::Dictionary(dictionary! {}))
     };
 
     let resources_id = match resources_ref {
@@ -176,12 +188,10 @@ fn ensure_resources_entry(
 fn append_content(doc: &mut Document, page_id: ObjectId, new_content_id: ObjectId) -> Result<()> {
     let page_obj = doc.get_object_mut(page_id)?;
     let dict = page_obj.as_dict_mut()?;
-    let contents = dict
-        .get(b"Contents")
-        .map_err(|_| CoreError::Internal("页面缺少 Contents".into()))?;
-    let contents_clone = contents.clone();
-    match contents_clone {
-        Object::Reference(id) => {
+    // /Contents 是可选键:空白页没有它也是合法 PDF。
+    // 此前直接报错会让整份文档的水印失败,这里补挂新的内容流即可。
+    match dict.get(b"Contents").ok().cloned() {
+        Some(Object::Reference(id)) => {
             dict.set(
                 "Contents",
                 Object::Array(vec![
@@ -190,7 +200,7 @@ fn append_content(doc: &mut Document, page_id: ObjectId, new_content_id: ObjectI
                 ]),
             );
         }
-        Object::Array(arr) => {
+        Some(Object::Array(arr)) => {
             let mut new_arr = arr;
             new_arr.push(Object::Reference(new_content_id));
             dict.set("Contents", Object::Array(new_arr));
@@ -213,12 +223,23 @@ pub fn add_image_watermark(
     // 与文字水印同理:新增的 XObject 与 content 为明文
     super::decrypt_if_needed(&mut doc)?;
 
-    // 读取图片并转为 PDF XObject
+    // 读取图片并转为 PDF XObject。透明背景必须合成到白底再编码:
+    // 直接 to_rgb8() 会丢掉 alpha,透明像素变成黑色,水印在页面上就是一个黑块
     let img_bytes = std::fs::read(image_path)?;
-    let img = image::load_from_memory(&img_bytes)
+    let decoded = image::load_from_memory(&img_bytes)
         .map_err(|e| CoreError::Image(format!("读取图片失败: {e}")))?
-        .to_rgb8();
-    let (width, height) = img.dimensions();
+        .to_rgba8();
+    let (width, height) = decoded.dimensions();
+    let mut img = image::RgbImage::new(width, height);
+    for (x, y, p) in decoded.enumerate_pixels() {
+        let alpha = p[3] as f32 / 255.0;
+        let over_white = |c: u8| ((c as f32) * alpha + 255.0 * (1.0 - alpha)).round() as u8;
+        img.put_pixel(
+            x,
+            y,
+            image::Rgb([over_white(p[0]), over_white(p[1]), over_white(p[2])]),
+        );
+    }
 
     // 编码为 JPEG 以减小体积
     let mut jpeg_buf = std::io::Cursor::new(Vec::new());
@@ -242,8 +263,10 @@ pub fn add_image_watermark(
     let img_name = "Im1";
 
     let pages = doc.get_pages();
+    // 同文字水印:先把继承的 /Resources 落到页面自身
+    let page_ids: Vec<ObjectId> = pages.values().copied().collect();
+    super::inherit_page_attributes(&mut doc, &page_ids);
     for (_pn, page_id) in pages {
-        // 绘制图片的 content
         let content = format!(
             "q\n\
              {w} 0 0 {h} {x} {y} cm\n\
