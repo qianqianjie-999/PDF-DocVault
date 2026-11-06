@@ -6,9 +6,8 @@
 use lopdf::{dictionary, Document, Object, ObjectId};
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
-use tracing::warn;
 
-use crate::errors::Result;
+use crate::errors::{CoreError, Result};
 
 /// 合并统计信息
 #[derive(Debug, Clone, serde::Serialize)]
@@ -71,6 +70,13 @@ pub fn merge(input_paths: &[PathBuf], output: &Path) -> Result<MergeStats> {
     super::reparent_pages(&mut merged, pages_id, &page_ids);
 
     let count = kids.len() as u32;
+    // 0 页 PDF 多数阅读器直接打不开:与其提示「合并完成」却留下一个空壳,
+    // 不如明确报错(输入全是 0 页文档时才可能走到这里)
+    if count == 0 {
+        return Err(CoreError::InvalidArgument(
+            "合并结果没有页面,请检查输入文件是否有效".into(),
+        ));
+    }
     merged.objects.insert(
         pages_id,
         Object::Dictionary(dictionary! {
@@ -89,10 +95,6 @@ pub fn merge(input_paths: &[PathBuf], output: &Path) -> Result<MergeStats> {
     // 清理与压缩
     merged.prune_objects();
     merged.renumber_objects();
-
-    if count == 0 {
-        warn!("合并结果为 0 页,请检查输入文件是否有效");
-    }
 
     merged.save(output)?;
 

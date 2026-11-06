@@ -105,6 +105,33 @@ fn merge_locked_pdf_fails_clearly() {
     );
 }
 
+/// 输入全是 0 页文档时不应写出打不开的 0 页 PDF
+#[test]
+fn merge_empty_inputs_fails() {
+    let src = make_pdf(1);
+    let empty = src.parent().unwrap().join("empty.pdf");
+    let mut doc = lopdf::Document::with_version("1.5");
+    let pages_id = doc.add_object(dictionary! {
+        "Type" => "Pages",
+        "Count" => 0,
+        "Kids" => Vec::<Object>::new(),
+    });
+    let catalog_id = doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => pages_id,
+    });
+    doc.trailer.set("Root", catalog_id);
+    doc.save(&empty).expect("写出 0 页 PDF");
+
+    let out = src.parent().unwrap().join("merged-empty.pdf");
+    let err = merge(&[empty], &out).expect_err("0 页结果应被拒绝");
+    assert!(
+        format!("{err}").contains("没有页面"),
+        "错误信息应提示结果无页面,实际为: {err}"
+    );
+    assert!(!out.exists(), "校验失败时不应留下 0 页空壳");
+}
+
 // ===== 拆分 =====
 
 /// 按范围拆分:拆出的每个文件可重新 load 且页数正确
@@ -324,6 +351,28 @@ fn delete_extract_insert_reorder() {
     let out = dir.join("reordered.pdf");
     reorder_pages(&src, &[3, 1, 2, 4], &out).expect("重排应成功");
     assert_eq!(page_count(&out), 4);
+}
+
+/// 重排必须覆盖全部页面且不能重复:漏页会静默丢页,重复页会让页面树出现重复叶子
+#[test]
+fn reorder_rejects_duplicate_and_missing_pages() {
+    let src = make_pdf(4);
+    let dir = src.parent().unwrap().to_path_buf();
+
+    let out = dir.join("reorder-dup.pdf");
+    let err = reorder_pages(&src, &[1, 2, 3, 3], &out).expect_err("重复页应被拒绝");
+    assert!(
+        format!("{err}").contains("重复"),
+        "错误信息应指出重复页,实际为: {err}"
+    );
+    assert!(!out.exists(), "校验失败时不应写出半成品");
+
+    let out = dir.join("reorder-missing.pdf");
+    let err = reorder_pages(&src, &[3, 1, 2], &out).expect_err("缺少页面应被拒绝");
+    assert!(
+        format!("{err}").contains("缺少第 4 页"),
+        "错误信息应指出缺少的页码,实际为: {err}"
+    );
 }
 
 // ===== 水印与压缩 =====
@@ -793,6 +842,22 @@ fn render_pages_out_of_range_rejected() {
         |_, _| {},
     );
     assert!(result.is_err(), "页码 4 超出共 3 页应报错");
+}
+
+/// 单页渲染同样要校验页码越界,不能把 pdfium 的底层错误直接抛给用户
+#[test]
+fn render_single_page_out_of_range_rejected() {
+    if !ensure_pdfium() {
+        eprintln!("跳过:未找到 pdfium 动态库(可设置 PDFIUM_PATH)");
+        return;
+    }
+    let src = make_pdf(2);
+    let err = pdf_docvault_core::pdf::render_page_to_image(&src, 2, 96)
+        .expect_err("下标 2 超出 2 页文档应报错");
+    assert!(
+        format!("{err}").contains("页面不存在: 3"),
+        "应返回明确的越界页号,实际为: {err}"
+    );
 }
 
 // ===== 页面树结构 =====

@@ -212,6 +212,31 @@ pub fn reorder_pages(input: &Path, new_order: &[u32], output: &Path) -> Result<(
     super::decrypt_if_needed(&mut doc)?;
     let pages_map = doc.get_pages();
 
+    // 重排必须是完整排列:漏页会静默丢页面,重复页会让页面树里出现两个
+    // 指向同一页面对象的叶子,阅读器行为不一致甚至报错
+    let total = pages_map.len() as u32;
+    if new_order.is_empty() {
+        return Err(CoreError::InvalidArgument("未指定任何页面".into()));
+    }
+    let mut seen = vec![false; total as usize + 1];
+    for &pn in new_order {
+        if pn == 0 || pn > total {
+            return Err(CoreError::PageNotFound(pn));
+        }
+        if seen[pn as usize] {
+            return Err(CoreError::InvalidArgument(format!(
+                "页面顺序中第 {pn} 页重复出现"
+            )));
+        }
+        seen[pn as usize] = true;
+    }
+    if let Some(idx) = seen.iter().skip(1).position(|&v| !v) {
+        return Err(CoreError::InvalidArgument(format!(
+            "页面顺序缺少第 {} 页,重排必须包含全部页面",
+            idx + 1
+        )));
+    }
+
     let mut kids: Vec<Object> = Vec::new();
     let mut page_ids: Vec<ObjectId> = Vec::new();
     for &pn in new_order {

@@ -28,6 +28,14 @@ describe('parsePageNums', () => {
     expect(parsePageNums('0')).toEqual([])
     expect(parsePageNums('0-3')).toEqual([])
   })
+
+  it('超大区间直接判无效,不展开成海量数组', () => {
+    // 此前会 push 近十亿项,足以卡死主线程
+    expect(parsePageNums('1-999999999')).toEqual([])
+    expect(parsePageNums('1-10001')).toEqual([])
+    // 上限边界本身仍然合法
+    expect(parsePageNums('1-10000')).toHaveLength(10000)
+  })
 })
 
 describe('pageInputInvalid', () => {
@@ -40,6 +48,8 @@ describe('pageInputInvalid', () => {
     expect(pageInputInvalid('abc')).toBe(true)
     expect(pageInputInvalid('1-10-20')).toBe(true)
     expect(pageInputInvalid('1,abc')).toBe(true)
+    // 超大区间会被 parsePageNums 判无效,界面提示页码格式有误
+    expect(pageInputInvalid('1-999999999')).toBe(true)
   })
 
   it('合法输入不判无效', () => {

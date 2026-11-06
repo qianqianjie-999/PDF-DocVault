@@ -61,6 +61,12 @@ const outputPath = ref('')
 const resultPages = ref(0)
 const resultElapsed = ref(0)
 
+/** 列表内容变化后旧结果不再对应当前图片,统一收起 */
+function resetResult() {
+  resultPages.value = 0
+  resultElapsed.value = 0
+}
+
 const perPageOptions: Array<{ value: ImagesPerA4; label: string; desc: string }> = [
   { value: 'one', label: '1 张/页', desc: '整页居中,适合单据/证书' },
   { value: 'two', label: '2 张/页', desc: '上下两栏,适合证件正反面' },
@@ -78,11 +84,15 @@ const estimatedPages = computed(() => {
 })
 
 function onSelect(items: { path: string; name: string }[]) {
+  let added = false
   for (const it of items) {
     if (!ACCEPT_EXT.test(it.path)) continue
     if (files.value.some((f) => f.path === it.path)) continue
     files.value.push({ path: it.path, name: it.name })
+    added = true
   }
+  // 只有真正加入新图片才收起旧结果;全是重复路径时保持原样
+  if (added) resetResult()
   // 首次添加且输出路径为空:优先设置页默认目录,否则源文件所在目录
   if (!outputPath.value && files.value.length) {
     const first = files.value[0].path
@@ -94,13 +104,13 @@ function onSelect(items: { path: string; name: string }[]) {
 
 function removeFile(idx: number) {
   files.value.splice(idx, 1)
+  resetResult()
 }
 
 function clearFiles() {
   files.value = []
   // 清空选图后旧的合成结果不再对应当前内容,一并收起
-  resultPages.value = 0
-  resultElapsed.value = 0
+  resetResult()
 }
 
 function move(idx: number, delta: number) {
@@ -108,11 +118,14 @@ function move(idx: number, delta: number) {
   if (target < 0 || target >= files.value.length) return
   const arr = files.value
   ;[arr[idx], arr[target]] = [arr[target], arr[idx]]
+  // 顺序变了但尚未重新合成,旧结果同样不再对应
+  resetResult()
 }
 
 async function pickOutputFile() {
   const out = await save({
-    defaultPath: settings.resolveOutput('images.pdf'),
+    // 已有输出路径时从该路径开始,避免浏览对话框把用户刚选好的位置重置掉
+    defaultPath: outputPath.value || settings.resolveOutput('images.pdf'),
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   })
   if (out) outputPath.value = out

@@ -66,17 +66,18 @@ const encryptPermissions = reactive({
 const decryptPassword = ref('')
 const encryptProbe = ref<EncryptionInfo | null>(null)
 
-// 切到加密面板/换文件时探测一次:已加密的文件直接提示先解密,
-// 否则用户点加密会收到一句摸不着头脑的「密码错误」。
+// 切到加密/解密面板或换文件时探测一次:
+// - 加密页据此提示「已加密,请先解密」,否则用户点加密只会收到「密码错误」;
+// - 解密页据此区分「需要打开密码」与「仅限制权限」,后者允许空密码直接解密。
 watch(
   () => [op.value, filesStore.selectedFiles[0]?.path] as const,
   async () => {
     encryptProbe.value = null
-    if (op.value !== 'encrypt' || filesStore.selectedFiles.length !== 1) return
+    if (!['encrypt', 'decrypt'].includes(op.value) || filesStore.selectedFiles.length !== 1) return
     try {
       encryptProbe.value = await pdfApi.probeEncryption(filesStore.selectedFiles[0].path)
     } catch {
-      encryptProbe.value = null // 探测失败不打扰用户,真正加密时再报错
+      encryptProbe.value = null // 探测失败不打扰用户,真正处理时再报错
     }
   },
   { immediate: true },
@@ -238,7 +239,9 @@ async function run() {
         break
       }
       case 'decrypt': {
-        if (!decryptPassword.value) {
+        // 只有探测确认需要打开密码时才强制输入。仅限制权限的加密 PDF(用户密码为空)
+        // 可以留空直接解密;探测失败时也放行,由 pycore 给出真正的失败原因。
+        if (encryptProbe.value?.locked) {
           ElMessage.warning('请输入该 PDF 的打开密码')
           break
         }
@@ -432,6 +435,24 @@ async function run() {
 
       <!-- 解密 -->
       <el-form v-else-if="op === 'decrypt'" label-width="100px" label-position="left">
+        <el-alert
+          v-if="encryptProbe && !encryptProbe.encrypted"
+          type="info"
+          :closable="false"
+          show-icon
+          title="该文件未加密"
+          description="解密只会另存一份副本"
+          class="form-alert"
+        />
+        <el-alert
+          v-else-if="encryptProbe?.encrypted && !encryptProbe.locked"
+          type="info"
+          :closable="false"
+          show-icon
+          title="该文件仅限制权限"
+          description="无需打开密码,密码留空即可直接解密"
+          class="form-alert"
+        />
         <el-form-item label="密码">
           <el-input v-model="decryptPassword" type="password" show-password />
         </el-form-item>

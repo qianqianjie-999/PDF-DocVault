@@ -107,6 +107,10 @@ pub fn render_page_to_image(
 ) -> Result<image::DynamicImage> {
     let pdfium = pdfium()?;
     let document = pdfium.load_pdf_from_file(input, None)?;
+    let total = document.pages().len() as u32;
+    if page_index >= total {
+        return Err(CoreError::PageNotFound(page_index + 1));
+    }
     let page = document.pages().get(page_index as PdfPageIndex)?;
     let cfg = render_config(&page, dpi);
     let img = page
