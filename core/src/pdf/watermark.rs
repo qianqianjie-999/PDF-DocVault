@@ -77,14 +77,18 @@ pub fn add_text_watermark(
     let page_ids: Vec<ObjectId> = pages.values().copied().collect();
     super::inherit_page_attributes(&mut doc, &page_ids);
     for (_pn, page_id) in pages {
+        // 资源名必须避开页面已有同名项:水印流与原正文共用同一份 Resources,
+        // 固定写死 /F1、/GS1 会把原文的字体、透明度状态覆盖掉,原内容随之错乱
+        let font_name = unique_resource_name(&doc, page_id, b"Font", "F1")?;
+        let gs_name = unique_resource_name(&doc, page_id, b"ExtGState", "GS1")?;
         // 构造水印 content stream
-        let content = build_text_watermark_content(text, opts);
+        let content = build_text_watermark_content(text, opts, &font_name, &gs_name);
         let stream = Stream::new(dictionary! {}, content);
         let content_id = doc.add_object(stream);
 
         // 在页面 Resources 中注册字体与透明度状态
-        ensure_resources_font(&mut doc, page_id, b"F1", font_id)?;
-        ensure_resources_entry(&mut doc, page_id, b"ExtGState", b"GS1", gs_id)?;
+        ensure_resources_font(&mut doc, page_id, font_name.as_bytes(), font_id)?;
+        ensure_resources_entry(&mut doc, page_id, b"ExtGState", gs_name.as_bytes(), gs_id)?;
 
         // 追加到页面 /Contents
         append_content(&mut doc, page_id, content_id)?;
@@ -95,7 +99,12 @@ pub fn add_text_watermark(
     Ok(())
 }
 
-fn build_text_watermark_content(text: &str, opts: &WatermarkOptions) -> Vec<u8> {
+fn build_text_watermark_content(
+    text: &str,
+    opts: &WatermarkOptions,
+    font_name: &str,
+    gs_name: &str,
+) -> Vec<u8> {
     // 构造 PDF content stream
     // 转义文本中的特殊字符
     let escaped = text
@@ -110,14 +119,16 @@ fn build_text_watermark_content(text: &str, opts: &WatermarkOptions) -> Vec<u8> 
     let neg_sin = -sin;
     let content = format!(
         "q\n\
-         /GS1 gs\n\
+         /{gs_name} gs\n\
          {r} {g} {b} rg\n\
          BT\n\
-         /F1 {fs} Tf\n\
+         /{font_name} {fs} Tf\n\
          {cos:.4} {sin:.4} {nsin:.4} {cos:.4} {x} {y} Tm\n\
          ({escaped}) Tj\n\
          ET\n\
          Q\n",
+        gs_name = gs_name,
+        font_name = font_name,
         r = r,
         g = g,
         b = b,
@@ -130,6 +141,36 @@ fn build_text_watermark_content(text: &str, opts: &WatermarkOptions) -> Vec<u8> 
         escaped = escaped
     );
     content.into_bytes()
+}
+
+/// 在页面 Resources 的指定子字典里找一个尚未被占用的资源名。
+///
+/// 水印内容流与页面原内容共用同一份 Resources,若直接注册固定的 /F1、
+/// /GS1、/Im1,会覆盖原文档同名资源,导致正文换字体甚至原图被水印图替换。
+fn unique_resource_name(
+    doc: &Document,
+    page_id: ObjectId,
+    category: &[u8],
+    base: &str,
+) -> Result<String> {
+    let page = doc.get_object(page_id)?.as_dict()?;
+    let resources = match page.get(b"Resources").ok() {
+        Some(Object::Reference(id)) => doc.get_object(*id)?.as_dict()?,
+        Some(Object::Dictionary(dict)) => dict,
+        _ => return Ok(base.to_string()),
+    };
+    let category_dict = match resources.get(category).ok() {
+        Some(Object::Reference(id)) => doc.get_object(*id)?.as_dict()?,
+        Some(Object::Dictionary(dict)) => dict,
+        _ => return Ok(base.to_string()),
+    };
+    let mut name = base.to_string();
+    let mut n = 1;
+    while category_dict.get(name.as_bytes()).is_ok() {
+        n += 1;
+        name = format!("{base}_{n}");
+    }
+    Ok(name)
 }
 
 /// 确保页面 Resources 中注册了指定字体。
@@ -259,19 +300,30 @@ pub fn add_image_watermark(
     let image_stream = Stream::new(stream_dict, jpeg_data);
     let image_id = doc.add_object(image_stream);
 
-    // 资源名
-    let img_name = "Im1";
+    // 图片水印同样要遵守不透明度:没有 ExtGState 的 CA/ca,
+    // 页面上的 opacity 参数只会被静默忽略,水印永远是全不透明
+    let opacity = opts.opacity.clamp(0.0, 1.0);
+    let gs_id = doc.add_object(dictionary! {
+        "Type" => "ExtGState",
+        "CA" => opacity,
+        "ca" => opacity,
+    });
 
     let pages = doc.get_pages();
     // 同文字水印:先把继承的 /Resources 落到页面自身
     let page_ids: Vec<ObjectId> = pages.values().copied().collect();
     super::inherit_page_attributes(&mut doc, &page_ids);
     for (_pn, page_id) in pages {
+        // 原页面若已用 /Im1 或 /GS1,固定资源名会把原图/原状态覆盖掉
+        let img_name = unique_resource_name(&doc, page_id, b"XObject", "Im1")?;
+        let gs_name = unique_resource_name(&doc, page_id, b"ExtGState", "GS1")?;
         let content = format!(
             "q\n\
+             /{gs_name} gs\n\
              {w} 0 0 {h} {x} {y} cm\n\
              /{name} Do\n\
              Q\n",
+            gs_name = gs_name,
             w = opts.font_size * 2.0,
             h = opts.font_size * 2.0 * height as f32 / width as f32,
             x = opts.x,
@@ -281,8 +333,9 @@ pub fn add_image_watermark(
         let stream = Stream::new(dictionary! {}, content.into_bytes());
         let content_id = doc.add_object(stream);
 
-        // 注册 XObject 到 Resources
+        // 注册 XObject 与透明度状态到 Resources
         ensure_resources_xobject(&mut doc, page_id, img_name.as_bytes(), image_id)?;
+        ensure_resources_entry(&mut doc, page_id, b"ExtGState", gs_name.as_bytes(), gs_id)?;
         append_content(&mut doc, page_id, content_id)?;
     }
 

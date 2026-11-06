@@ -7,6 +7,7 @@ import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/task'
 import { useSettingsStore } from '@/stores/settings'
 import { basename, dirname, formatFileSize, joinPath } from '@/utils/file'
+import { pageInputInvalid, parsePageNums, parseRanges } from '@/utils/pages'
 import { openOutput } from '@/utils/openOutput'
 import ProgressOverlay from './ProgressOverlay.vue'
 import type { EncryptionInfo, SplitMode } from '@/types/pdf'
@@ -114,53 +115,6 @@ const canRun = computed(() => {
   if (needsMultiFile.value) return filesStore.selectedFiles.length >= 2
   return filesStore.selectedFiles.length > 0
 })
-
-/**
- * 解析页码输入为 1-based 页码列表,支持逗号分隔的单页与闭区间范围,
- * 如 "1,3,5-8" → [1,3,5,6,7,8];非法片段、零与负数会被忽略,
- * "8-5" 视为 "5-8",输出保持输入顺序。
- */
-function parsePageNums(s: string): number[] {
-  const nums: number[] = []
-  for (const part of s.split(',')) {
-    const t = part.trim()
-    if (!t) continue
-    const range = t.match(/^(\d+)\s*-\s*(\d+)$/)
-    if (range) {
-      let a = parseInt(range[1], 10)
-      let b = parseInt(range[2], 10)
-      if (isNaN(a) || isNaN(b)) continue
-      if (a > b) [a, b] = [b, a]
-      for (let n = Math.max(a, 1); n <= b; n++) nums.push(n)
-    } else {
-      const n = parseInt(t, 10)
-      if (!isNaN(n) && n > 0) nums.push(n)
-    }
-  }
-  return nums
-}
-
-/**
- * 输入既非空白、又解析不出任何页码(如「第一页」「abc」)时返回 true。
- * 这类输入不能被当作「留空 = 全部」,否则旋转/转图片会静默处理整本文档。
- */
-function pageInputInvalid(raw: string): boolean {
-  return raw.trim().length > 0 && parsePageNums(raw).length === 0
-}
-
-function parseRanges(s: string): { start: number; end: number }[] {
-  return s
-    .split(',')
-    .map((part) => {
-      const [a, b] = part.trim().split('-').map((x) => parseInt(x, 10))
-      if (isNaN(a) || a < 1) return null
-      const end = isNaN(b) ? a : b
-      if (end < 1) return null
-      // 与 parsePageNums 一致:8-5 视为 5-8,而不是交给后端报「无效页码范围」
-      return { start: Math.min(a, end), end: Math.max(a, end) }
-    })
-    .filter((r): r is { start: number; end: number } => r !== null)
-}
 
 async function pickOutput(defaultName: string): Promise<string | null> {
   // 设置页配置的默认输出目录优先生效,留空则由系统记住上次位置

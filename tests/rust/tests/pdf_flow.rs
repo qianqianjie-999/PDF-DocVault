@@ -328,6 +328,151 @@ fn delete_extract_insert_reorder() {
 
 // ===== 水印与压缩 =====
 
+/// 构造一个 Resources 里已占用 F1 / GS1 / Im1 的页面,用于验证水印不会覆盖原有资源
+fn make_resource_rich_pdf() -> std::path::PathBuf {
+    let dir = make_pdf(1).parent().unwrap().to_path_buf();
+    let path = dir.join("resource-rich.pdf");
+
+    let mut doc = lopdf::Document::with_version("1.5");
+    let pages_id = doc.new_object_id();
+    let content_id = doc.add_object(lopdf::Stream::new(
+        dictionary! {},
+        b"BT /F1 12 Tf 72 720 Td (Origin) Tj ET".to_vec(),
+    ));
+    let font_id = doc.add_object(dictionary! {
+        "Type" => "Font",
+        "Subtype" => "Type1",
+        "BaseFont" => "Times-Roman",
+    });
+    let img_id = doc.add_object(lopdf::Stream::new(
+        dictionary! {
+            "Type" => "XObject",
+            "Subtype" => "Image",
+            "Width" => 10,
+            "Height" => 10,
+            "ColorSpace" => "DeviceRGB",
+            "BitsPerComponent" => 8,
+        },
+        vec![0u8; 10 * 10 * 3],
+    ));
+    let gs_id = doc.add_object(dictionary! {
+        "Type" => "ExtGState",
+        "CA" => 1.0,
+        "ca" => 1.0,
+    });
+    let resources_id = doc.add_object(dictionary! {
+        "Font" => dictionary! { "F1" => font_id },
+        "XObject" => dictionary! { "Im1" => img_id },
+        "ExtGState" => dictionary! { "GS1" => gs_id },
+    });
+    let page_id = doc.add_object(dictionary! {
+        "Type" => "Page",
+        "Parent" => pages_id,
+        "Contents" => content_id,
+        "Resources" => resources_id,
+        "MediaBox" => vec![0.into(), 0.into(), 595.into(), 842.into()],
+    });
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Count" => 1,
+            "Kids" => vec![Object::Reference(page_id)],
+        }),
+    );
+    let catalog_id = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    doc.trailer.set("Root", catalog_id);
+    doc.save(&path).expect("保存含既有资源的 PDF");
+    path
+}
+
+fn deref_dict<'a>(doc: &'a lopdf::Document, obj: &'a Object) -> &'a lopdf::Dictionary {
+    let obj = match obj {
+        Object::Reference(id) => doc.get_object(*id).unwrap(),
+        other => other,
+    };
+    match obj {
+        // XObject 是带字典的流对象,资源条目同样要取其字典
+        Object::Stream(stream) => &stream.dict,
+        other => other.as_dict().unwrap(),
+    }
+}
+
+/// 取第 1 页 Resources 下的指定子字典(Font / XObject / ExtGState)
+fn page1_resource<'a>(doc: &'a lopdf::Document, category: &[u8]) -> &'a lopdf::Dictionary {
+    let page_id = *doc.get_pages().get(&1).expect("第 1 页存在");
+    let page = doc.get_object(page_id).unwrap().as_dict().unwrap();
+    let resources = deref_dict(doc, page.get(b"Resources").unwrap());
+    deref_dict(doc, resources.get(category).unwrap())
+}
+
+/// 水印与原文共用 Resources:固定资源名 /F1、/GS1、/Im1 会覆盖原资源,
+/// 导致正文换字体、原图被水印图替换。这里验证原有映射保持不动,水印另起新名。
+#[test]
+fn watermark_does_not_shadow_existing_resources() {
+    let src = make_resource_rich_pdf();
+    let dir = src.parent().unwrap().to_path_buf();
+
+    // 文字水印:Font/F1 与 ExtGState/GS1 应保持原样
+    let text_out = dir.join("rich-text-watermarked.pdf");
+    add_text_watermark(&src, "WATERMARK", &WatermarkOptions::default(), &text_out)
+        .expect("文字水印应成功");
+    let doc = lopdf::Document::load(&text_out).expect("加载文字水印结果");
+    let fonts = page1_resource(&doc, b"Font");
+    let f1 = deref_dict(&doc, fonts.get(b"F1").unwrap());
+    let base_font = f1.get(b"BaseFont").unwrap().as_name().unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(base_font),
+        "Times-Roman",
+        "原文 /F1 字体不应被水印字体覆盖"
+    );
+    assert!(fonts.len() >= 2, "水印字体应注册在独立的新资源名下");
+    let ext = page1_resource(&doc, b"ExtGState");
+    let gs1 = deref_dict(&doc, ext.get(b"GS1").unwrap());
+    let ca = gs1.get(b"CA").unwrap().as_float().unwrap();
+    assert!(
+        (ca - 1.0).abs() < 1e-6,
+        "原文 /GS1 的 CA 不应被水印透明度覆盖,实际 {ca}"
+    );
+
+    // 图片水印:原 XObject/Im1 不应被水印图替换,且 opacity 必须落到 ExtGState
+    let logo_path = dir.join("rich-logo.png");
+    let mut logo = image::RgbaImage::new(8, 8);
+    for p in logo.pixels_mut() {
+        *p = image::Rgba([0, 120, 220, 255]);
+    }
+    logo.save(&logo_path).expect("保存水印图");
+    let img_out = dir.join("rich-image-watermarked.pdf");
+    let opts = WatermarkOptions {
+        opacity: 0.4,
+        ..WatermarkOptions::default()
+    };
+    add_image_watermark(&src, &logo_path, &opts, &img_out).expect("图片水印应成功");
+    let doc = lopdf::Document::load(&img_out).expect("加载图片水印结果");
+    let xobjects = page1_resource(&doc, b"XObject");
+    let im1 = deref_dict(&doc, xobjects.get(b"Im1").unwrap());
+    assert_eq!(
+        im1.get(b"Width").unwrap().as_i64().unwrap(),
+        10,
+        "原文 /Im1 不应被水印图替换"
+    );
+    let ext = page1_resource(&doc, b"ExtGState");
+    let gs1 = deref_dict(&doc, ext.get(b"GS1").unwrap());
+    let original_ca = gs1.get(b"CA").unwrap().as_float().unwrap();
+    assert!(
+        (original_ca - 1.0).abs() < 1e-6,
+        "原 /GS1 透明度应保持 1.0,实际 {original_ca}"
+    );
+    let has_opacity = ext.iter().any(|(_, obj)| {
+        deref_dict(&doc, obj)
+            .get(b"CA")
+            .ok()
+            .and_then(|o| o.as_float().ok())
+            .is_some_and(|v| (v - 0.4).abs() < 1e-6)
+    });
+    assert!(has_opacity, "图片水印的 opacity 应注册为 ExtGState");
+}
+
 /// 文字水印:处理后可重新加载且页数不变
 #[test]
 fn text_watermark_keeps_pages() {
