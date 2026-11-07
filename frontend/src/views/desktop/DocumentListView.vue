@@ -2,9 +2,11 @@
 import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
+import { open } from '@tauri-apps/plugin-dialog'
 import PageHeader from '@/components/common/PageHeader.vue'
 import { documentApi } from '@/api/document'
-import { formatFileSize, formatTimestamp } from '@/utils/file'
+import { pdfApi } from '@/api/pdf'
+import { formatFileSize, formatTimestamp, basename } from '@/utils/file'
 import type { Document, SearchDocument } from '@/types/document'
 
 const documents = ref<Document[]>([])
@@ -149,6 +151,34 @@ async function load() {
   }
 }
 
+/** 选择文件并导入文档库;PDF 顺带取页数,失败按 0 入库 */
+async function importFiles() {
+  const selected = await open({
+    multiple: true,
+    filters: [{ name: '文档', extensions: FILE_TYPES }],
+  })
+  if (!selected) return
+  const paths = Array.isArray(selected) ? selected : [selected]
+  let ok = 0
+  let fail = 0
+  for (const p of paths) {
+    try {
+      const ext = (basename(p).split('.').pop() || '').toLowerCase()
+      let pageCount: number | undefined
+      if (ext === 'pdf') {
+        pageCount = await pdfApi.pageCount(p).then((r) => r.count).catch(() => undefined)
+      }
+      await documentApi.import(p, ext, pageCount)
+      ok++
+    } catch {
+      fail++
+    }
+  }
+  if (ok) ElMessage.success(`已导入 ${ok} 个文档${fail ? `,${fail} 个失败` : ''}`)
+  else if (fail) ElMessage.error('导入失败')
+  await load()
+}
+
 async function remove(doc: Document) {
   try {
     await ElMessageBox.confirm(`确认删除文档「${doc.name}」?`, '确认', { type: 'warning' })
@@ -250,6 +280,7 @@ onBeforeUnmount(() => {
         </span>
         <el-button text size="small" @click="clearSearch">清除搜索</el-button>
       </span>
+      <el-button type="primary" class="import-btn" @click="importFiles">导入文档</el-button>
     </div>
 
     <div class="app-card">
@@ -338,6 +369,9 @@ onBeforeUnmount(() => {
     .search-limit {
       color: #e6a23c;
     }
+  }
+  .import-btn {
+    margin-left: auto;
   }
 }
 .hl {

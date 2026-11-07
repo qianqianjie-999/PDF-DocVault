@@ -126,6 +126,20 @@ pub async fn import_document(state: State<'_, AppState>, params: ImportParams) -
         .unwrap_or(0);
     let now = chrono::Utc::now().timestamp();
 
+    // 同一文件重复导入:已有未删除记录时直接返回原 id,避免列表里出现两行相同文件
+    let existing: Option<i64> = state.db.with_conn(|conn| {
+        Ok(conn
+            .query_row(
+                "SELECT id FROM documents WHERE file_path = ? AND status != 'deleted' LIMIT 1",
+                params![path.to_string_lossy().as_ref()],
+                |r| r.get(0),
+            )
+            .ok())
+    })?;
+    if let Some(id) = existing {
+        return Ok(id);
+    }
+
     let id = state.db.with_conn(|conn| {
         conn.execute(
             "INSERT INTO documents (name, file_path, file_type, file_size, page_count, status, created_at, updated_at) \
