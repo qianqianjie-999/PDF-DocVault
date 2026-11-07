@@ -20,7 +20,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use image::{DynamicImage, ImageFormat};
-use lopdf::{Dictionary, Document, Object, Stream};
+use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 
 use crate::errors::Result;
 
@@ -73,7 +73,14 @@ pub fn compress(input: &Path, output: &Path, level: u8) -> Result<CompressStats>
 
     let mut images_reencoded = 0usize;
     if let Some((quality, max_edge)) = image_budget(level) {
-        for obj in doc.objects.values_mut() {
+        // 软蒙版/显式蒙版通常是独立的灰度图 XObject,自身不带 SMask 键,
+        // 若被当普通图片做有损重编码,半透明边缘会出现块状噪点甚至白边。
+        // 先收集被引用的蒙版对象号,循环时跳过。
+        let protected = collect_mask_ids(&doc);
+        for (id, obj) in doc.objects.iter_mut() {
+            if protected.contains(id) {
+                continue;
+            }
             if let Object::Stream(stream) = obj {
                 if shrink_image(stream, quality, max_edge) {
                     images_reencoded += 1;
@@ -240,6 +247,38 @@ fn shrink_image(stream: &mut Stream, quality: u8, max_edge: u32) -> bool {
     );
     stream.set_content(encoded);
     true
+}
+
+/// 收集所有被图片以 `SMask` / `Mask` 引用的对象号。
+///
+/// 蒙版既能以单个引用出现,也能以引用数组出现(`Mask [3 0 R 4 0 R]`)。
+/// 这些对象本身只是普通灰度图,必须靠外部引用才能识别,不能交给 `shrink_image`。
+fn collect_mask_ids(doc: &Document) -> std::collections::HashSet<ObjectId> {
+    let mut ids = std::collections::HashSet::new();
+    for obj in doc.objects.values() {
+        let Object::Stream(stream) = obj else {
+            continue;
+        };
+        if dict_name(&stream.dict, b"Subtype") != Some("Image") {
+            continue;
+        }
+        for key in [b"SMask".as_slice(), b"Mask".as_slice()] {
+            match stream.dict.get(key) {
+                Ok(Object::Reference(id)) => {
+                    ids.insert(*id);
+                }
+                Ok(Object::Array(arr)) => {
+                    for item in arr {
+                        if let Object::Reference(id) = item {
+                            ids.insert(*id);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    ids
 }
 
 /// 按长边等比缩放到 `max_edge` 以内(不放大)
@@ -527,5 +566,152 @@ mod tests {
         assert_eq!(fit_within(1000, 2000, 1000), (500, 1000));
         // 不放大
         assert_eq!(fit_within(100, 100, 1000), (100, 100));
+    }
+
+    /// 生成 8 位灰度噪声图并 zlib 压缩,作为软蒙版流(体积远大于 JPEG 重编码结果)
+    fn gray_noise_flate(w: u32, h: u32) -> Vec<u8> {
+        use std::io::Write;
+        let mut img = image::GrayImage::new(w, h);
+        let mut seed: u32 = 0x0BAD_F00D;
+        for p in img.pixels_mut() {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            *p = image::Luma([(seed >> 16) as u8]);
+        }
+        let mut enc = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::best());
+        enc.write_all(img.as_raw()).unwrap();
+        enc.finish().unwrap()
+    }
+
+    /// 构造单页 PDF:主图带灰度 SMask;`extra` 为 None 或另一张无蒙版大图
+    fn build_pdf_with_smask(
+        base: Vec<u8>,
+        mask: Vec<u8>,
+        extra: Option<Vec<u8>>,
+        w: u32,
+        h: u32,
+    ) -> Document {
+        let mut doc = Document::with_version("1.5");
+        let pages_id = doc.new_object_id();
+
+        let mask_id = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject",
+                "Subtype" => "Image",
+                "Width" => w as i64,
+                "Height" => h as i64,
+                "ColorSpace" => "DeviceGray",
+                "BitsPerComponent" => 8,
+                "Filter" => "FlateDecode",
+            },
+            mask,
+        ));
+        let img_id = doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject",
+                "Subtype" => "Image",
+                "Width" => w as i64,
+                "Height" => h as i64,
+                "ColorSpace" => "DeviceRGB",
+                "BitsPerComponent" => 8,
+                "Filter" => "DCTDecode",
+                "SMask" => Object::Reference(mask_id),
+            },
+            base,
+        ));
+        let mut xobjects = dictionary! { "Im0" => img_id };
+        if let Some(bytes) = extra {
+            let extra_id = doc.add_object(Stream::new(
+                dictionary! {
+                    "Type" => "XObject",
+                    "Subtype" => "Image",
+                    "Width" => w as i64,
+                    "Height" => h as i64,
+                    "ColorSpace" => "DeviceRGB",
+                    "BitsPerComponent" => 8,
+                    "Filter" => "DCTDecode",
+                },
+                bytes,
+            ));
+            xobjects.set("Im1", extra_id);
+        }
+        let resources_id = doc.add_object(dictionary! { "XObject" => xobjects });
+
+        let content = Content {
+            operations: vec![
+                Operation::new("q", vec![]),
+                Operation::new(
+                    "cm",
+                    vec![
+                        595.into(),
+                        0.into(),
+                        0.into(),
+                        842.into(),
+                        0.into(),
+                        0.into(),
+                    ],
+                ),
+                Operation::new("Do", vec![Object::Name(b"Im0".to_vec())]),
+                Operation::new("Q", vec![]),
+            ],
+        };
+        let content_id = doc.add_object(Stream::new(dictionary! {}, content.encode().unwrap()));
+        let page_id = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages_id,
+            "MediaBox" => vec![0.into(), 0.into(), 595.into(), 842.into()],
+            "Resources" => resources_id,
+            "Contents" => content_id,
+        });
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Kids" => vec![page_id.into()],
+                "Count" => 1,
+            }),
+        );
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => pages_id,
+        });
+        doc.trailer.set("Root", catalog_id);
+        doc
+    }
+
+    #[test]
+    fn soft_mask_is_not_reencoded() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_, stats) = write_and_compress(
+            build_pdf_with_smask(
+                noise_jpeg(600, 600),
+                gray_noise_flate(600, 600),
+                None,
+                600,
+                600,
+            ),
+            dir.path(),
+            9,
+        );
+        assert_eq!(
+            stats.images_reencoded, 0,
+            "SMask 自身须受保护,带蒙版的主图也应跳过"
+        );
+    }
+
+    #[test]
+    fn normal_image_still_reencoded_beside_mask() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_, stats) = write_and_compress(
+            build_pdf_with_smask(
+                noise_jpeg(600, 600),
+                gray_noise_flate(600, 600),
+                Some(noise_jpeg(600, 600)),
+                600,
+                600,
+            ),
+            dir.path(),
+            9,
+        );
+        assert_eq!(stats.images_reencoded, 1, "无蒙版的大图仍应被重编码");
     }
 }
