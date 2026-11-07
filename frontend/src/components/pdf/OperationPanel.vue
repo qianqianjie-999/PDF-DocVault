@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, reactive, watch } from 'vue'
-import { save } from '@tauri-apps/plugin-dialog'
+import { open, save } from '@tauri-apps/plugin-dialog'
 import { ElMessage } from 'element-plus'
 import { pdfApi } from '@/api/pdf'
 import { useFilesStore } from '@/stores/files'
@@ -90,9 +90,21 @@ watch(
   { immediate: true },
 )
 const watermarkText = ref('PDF-DocVault')
+// 图片水印后端接口早已就绪,此前仅缺前端入口;文字/图片二选一
+const watermarkType = ref<'text' | 'image'>('text')
+const watermarkImagePath = ref('')
 const watermarkFontSize = ref(48)
 const watermarkOpacity = ref(0.3)
 const watermarkRotation = ref(45)
+
+/** 选择图片作为水印;清空时水印类型自动回到文字 */
+async function pickWatermarkImage() {
+  const selected = await open({
+    multiple: false,
+    filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }],
+  })
+  if (typeof selected === 'string') watermarkImagePath.value = selected
+}
 const compressLevel = ref(6)
 // 转图片默认值跟随设置页,避免那几项开关形同虚设
 const imagesDpi = ref(settings.defaultDpi)
@@ -305,7 +317,11 @@ async function run() {
         break
       }
       case 'watermark': {
-        if (!watermarkText.value.trim()) {
+        if (watermarkType.value === 'image' && !watermarkImagePath.value) {
+          ElMessage.warning('请先选择作为水印的图片')
+          break
+        }
+        if (watermarkType.value === 'text' && !watermarkText.value.trim()) {
           ElMessage.warning('请输入水印文本')
           break
         }
@@ -317,7 +333,8 @@ async function run() {
         const out = await pickOutput(`watermarked-${basename(first)}`, first)
         if (!out) break
         await pdfApi.watermark(first, out, {
-          text: watermarkText.value,
+          text: watermarkType.value === 'text' ? watermarkText.value : undefined,
+          image_path: watermarkType.value === 'image' ? watermarkImagePath.value : undefined,
           options: {
             font_size: watermarkFontSize.value,
             rotation: watermarkRotation.value,
@@ -518,15 +535,35 @@ async function run() {
 
       <!-- 水印 -->
       <el-form v-else-if="op === 'watermark'" label-width="100px" label-position="left">
-        <el-form-item label="水印文字">
-          <el-input v-model="watermarkText" />
+        <el-form-item label="水印类型">
+          <el-radio-group v-model="watermarkType">
+            <el-radio-button value="text">文字</el-radio-button>
+            <el-radio-button value="image">图片</el-radio-button>
+          </el-radio-group>
         </el-form-item>
-        <el-form-item label="字号">
-          <el-input-number v-model="watermarkFontSize" :min="8" :max="144" />
-        </el-form-item>
-        <el-form-item label="旋转">
-          <el-slider v-model="watermarkRotation" :min="0" :max="360" />
-        </el-form-item>
+        <template v-if="watermarkType === 'text'">
+          <el-form-item label="水印文字">
+            <el-input v-model="watermarkText" />
+          </el-form-item>
+          <el-form-item label="字号">
+            <el-input-number v-model="watermarkFontSize" :min="8" :max="144" />
+          </el-form-item>
+          <el-form-item label="旋转">
+            <el-slider v-model="watermarkRotation" :min="0" :max="360" />
+          </el-form-item>
+        </template>
+        <template v-else>
+          <el-form-item label="水印图片">
+            <div class="wm-image-row">
+              <el-button @click="pickWatermarkImage">选择图片</el-button>
+              <span class="wm-image-name">{{ watermarkImagePath ? basename(watermarkImagePath) : '未选择' }}</span>
+            </div>
+          </el-form-item>
+          <el-form-item label="图片宽度">
+            <el-input-number v-model="watermarkFontSize" :min="8" :max="144" />
+            <span class="hint">单位为磅,实际宽度 ≈ 数值 × 2</span>
+          </el-form-item>
+        </template>
         <el-form-item label="不透明度">
           <el-slider v-model="watermarkOpacity" :min="0" :max="1" :step="0.05" />
         </el-form-item>
@@ -652,5 +689,19 @@ async function run() {
   font-size: 12px;
   color: $text-secondary;
   line-height: 1.5;
+}
+.wm-image-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.wm-image-name {
+  font-size: 12px;
+  color: $text-secondary;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 240px;
 }
 </style>

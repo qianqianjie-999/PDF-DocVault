@@ -51,12 +51,12 @@ function save() {
             <el-radio value="webp">WebP</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="OCR 语言(预留)">
-          <el-select v-model="settings.ocrLanguage" disabled>
+        <el-form-item label="OCR 识别语言">
+          <el-select v-model="settings.ocrLanguage">
             <el-option label="中文+英文" value="ch" />
             <el-option label="英文" value="en" />
           </el-select>
-          <span class="hint">当前模型固定中英文混合识别</span>
+          <span class="hint">默认引擎为中英文混合识别;英文选项在 paddleocr 引擎下加载英文专用模型</span>
         </el-form-item>
         <el-form-item label="完成后自动打开">
           <el-switch v-model="settings.autoOpenOutput" />

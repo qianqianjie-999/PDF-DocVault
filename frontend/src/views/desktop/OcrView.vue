@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { save } from '@tauri-apps/plugin-dialog'
 import { ElMessage } from 'element-plus'
 import PageHeader from '@/components/common/PageHeader.vue'
@@ -32,10 +32,18 @@ const env = ref<OcrSelftestOutput | null>(null)
 // 选项
 const options = ref<OcrOptions>({
   engine: null,
-  lang: null,
+  // 识别语言跟随设置页,不再写死 null;后端对 rapidocr(混识)忽略、paddleocr 生效
+  lang: settings.ocrLanguage,
   dpi: 200,
   timeout_secs: 300,
 })
+// 设置页改语言后同步到本页(store 持久化,但本页已挂载需手动跟随)
+watch(
+  () => settings.ocrLanguage,
+  (lang) => {
+    options.value.lang = lang
+  },
+)
 
 // 输出模式:text=纯文本识别,docx=拍图转 Word,xlsx=表格转 Excel
 const outMode = ref<'text' | ConvertMode>('text')

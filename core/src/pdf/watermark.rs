@@ -55,13 +55,37 @@ pub fn add_text_watermark(
     // 新增的水印流是明文,加密文档需先解密,否则阅读器解出来的水印会是乱码
     super::decrypt_if_needed(&mut doc)?;
 
-    // 创建 Helvetica 字体对象
-    let font_id = doc.add_object(dictionary! {
-        "Type" => "Font",
-        "Subtype" => "Type1",
-        "BaseFont" => "Helvetica",
-        "Encoding" => "WinAnsiEncoding",
-    });
+    // 字体:纯 ASCII 用 Helvetica(兼容性最好且无额外体积);含中文时用阅读器内置的
+    // STSong-Light 复合字体 + UniGB-UCS2-H。后者是「非嵌入」字体,pdfium/Acrobat/Foxit
+    // 均内置,无需打包中文字体文件;若继续用 Helvetica,中文会全部乱码。
+    let use_cjk = !text.is_ascii();
+    let font_obj = if use_cjk {
+        let descendant_id = doc.add_object(dictionary! {
+            "Type" => "Font",
+            "Subtype" => "CIDFontType0",
+            "BaseFont" => "STSong-Light",
+            "CIDSystemInfo" => dictionary! {
+                "Registry" => "Adobe",
+                "Ordering" => "GB1",
+                "Supplement" => 2,
+            },
+        });
+        dictionary! {
+            "Type" => "Font",
+            "Subtype" => "Type0",
+            "BaseFont" => "STSong-Light",
+            "Encoding" => "UniGB-UCS2-H",
+            "DescendantFonts" => vec![Object::Reference(descendant_id)],
+        }
+    } else {
+        dictionary! {
+            "Type" => "Font",
+            "Subtype" => "Type1",
+            "BaseFont" => "Helvetica",
+            "Encoding" => "WinAnsiEncoding",
+        }
+    };
+    let font_id = doc.add_object(font_obj);
     // 透明度必须通过 ExtGState 的 CA/ca 生效;否则 content 里的 /GS1 gs
     // 引用的是一份不存在的资源,阅读器会直接忽略,滑块形同虚设
     let opacity = opts.opacity.clamp(0.0, 1.0);
@@ -82,7 +106,7 @@ pub fn add_text_watermark(
         let font_name = unique_resource_name(&doc, page_id, b"Font", "F1")?;
         let gs_name = unique_resource_name(&doc, page_id, b"ExtGState", "GS1")?;
         // 构造水印 content stream
-        let content = build_text_watermark_content(text, opts, &font_name, &gs_name);
+        let content = build_text_watermark_content(text, opts, &font_name, &gs_name, use_cjk);
         let stream = Stream::new(dictionary! {}, content);
         let content_id = doc.add_object(stream);
 
@@ -104,13 +128,18 @@ fn build_text_watermark_content(
     opts: &WatermarkOptions,
     font_name: &str,
     gs_name: &str,
+    use_cjk: bool,
 ) -> Vec<u8> {
-    // 构造 PDF content stream
-    // 转义文本中的特殊字符
-    let escaped = text
-        .replace('\\', "\\\\")
-        .replace('(', "\\(")
-        .replace(')', "\\)");
+    // 复合字体用 <...> 十六进制 UTF-16BE 字面量,普通字体用 (...) 字面量并转义特殊字符
+    let text_literal = if use_cjk {
+        format!("<{}>", encode_utf16be_hex(text))
+    } else {
+        let escaped = text
+            .replace('\\', "\\\\")
+            .replace('(', "\\(")
+            .replace(')', "\\)");
+        format!("({escaped})")
+    };
     let (r, g, b) = (opts.color[0], opts.color[1], opts.color[2]);
     // Tm: a b c d e f,旋转矩阵
     let rad = opts.rotation.to_radians();
@@ -124,7 +153,7 @@ fn build_text_watermark_content(
          BT\n\
          /{font_name} {fs} Tf\n\
          {cos:.4} {sin:.4} {nsin:.4} {cos:.4} {x} {y} Tm\n\
-         ({escaped}) Tj\n\
+         {text_literal} Tj\n\
          ET\n\
          Q\n",
         gs_name = gs_name,
@@ -138,9 +167,18 @@ fn build_text_watermark_content(
         nsin = neg_sin,
         x = opts.x,
         y = opts.y,
-        escaped = escaped
+        text_literal = text_literal
     );
     content.into_bytes()
+}
+
+/// 将文本编码为 UTF-16BE 十六进制字符串,用于复合字体 UniGB-UCS2-H 的 <...> 字面量
+fn encode_utf16be_hex(text: &str) -> String {
+    let mut hex = String::with_capacity(text.encode_utf16().count() * 4);
+    for unit in text.encode_utf16() {
+        hex.push_str(&format!("{unit:04X}"));
+    }
+    hex
 }
 
 /// 在页面 Resources 的指定子字典里找一个尚未被占用的资源名。
@@ -514,5 +552,64 @@ mod tests {
         };
         let text = String::from_utf8_lossy(&raw);
         assert!(text.contains("(DRAFT) Tj"), "水印内容应写入新流: {text}");
+    }
+
+    #[test]
+    fn chinese_text_uses_cjk_font_and_utf16be() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut doc = Document::with_version("1.5");
+        let content_id = doc.add_object(Stream::new(dictionary! {}, b"q\nQ\n".to_vec()));
+        finish_single_page(
+            &mut doc,
+            Object::Dictionary(dictionary! {}),
+            Object::Reference(content_id),
+        );
+        let src = dir.path().join("in.pdf");
+        let out = dir.path().join("out.pdf");
+        doc.save(&src).unwrap();
+        // 「机密」二字含非 ASCII,应走复合字体路径而非 Helvetica
+        add_text_watermark(&src, "机密", &WatermarkOptions::default(), &out).unwrap();
+
+        let out_doc = Document::load(&out).unwrap();
+        let pages = out_doc.get_pages();
+        let page = out_doc
+            .get_object(*pages.get(&1).unwrap())
+            .unwrap()
+            .as_dict()
+            .unwrap();
+        let resources = resolve(&out_doc, page.get(b"Resources").unwrap())
+            .as_dict()
+            .unwrap();
+        let fonts = resolve(&out_doc, resources.get(b"Font").unwrap())
+            .as_dict()
+            .unwrap();
+        let font = resolve(&out_doc, fonts.get(b"F1").unwrap())
+            .as_dict()
+            .unwrap();
+        assert_eq!(
+            font.get(b"Subtype").unwrap().as_name_str().unwrap(),
+            "Type0",
+            "中文水印应使用复合字体"
+        );
+        assert_eq!(
+            font.get(b"BaseFont").unwrap().as_name_str().unwrap(),
+            "STSong-Light"
+        );
+        // 断言编码为 UTF-16BE:机=U+673A,密=U+5BC6
+        let last_obj = match resolve(&out_doc, page.get(b"Contents").unwrap()) {
+            Object::Array(arr) => resolve(&out_doc, arr.last().unwrap()),
+            _ => panic!("应追加为 Contents 数组"),
+        };
+        let stream = last_obj.as_stream().unwrap();
+        let raw = if stream.dict.get(b"Filter").is_ok() {
+            stream.decompressed_content().unwrap()
+        } else {
+            stream.content.clone()
+        };
+        let text = String::from_utf8_lossy(&raw);
+        assert!(
+            text.contains("<673A5BC6> Tj"),
+            "中文水印内容应为 UTF-16BE 十六进制字面量: {text}"
+        );
     }
 }
