@@ -7,7 +7,12 @@ import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/task'
 import { useSettingsStore } from '@/stores/settings'
 import { basename, dirname, formatFileSize, joinPath, samePath } from '@/utils/file'
-import { pageInputInvalid, parsePageNums, parseRanges } from '@/utils/pages'
+import {
+  MAX_SPLIT_RANGES,
+  pageInputInvalid,
+  parsePageNums,
+  parseRanges,
+} from '@/utils/pages'
 import { openOutput } from '@/utils/openOutput'
 import ProgressOverlay from './ProgressOverlay.vue'
 import type { EncryptionInfo, SplitMode } from '@/types/pdf'
@@ -175,6 +180,12 @@ async function run() {
           }
           mode = { kind: 'every_n_pages', n: splitN.value }
         } else {
+          // 每段都会生成一个文件,段数过多时先拦下并给出明确提示
+          const parts = splitRanges.value.split(',').filter((p) => p.trim()).length
+          if (parts > MAX_SPLIT_RANGES) {
+            ElMessage.warning(`一次最多拆分 ${MAX_SPLIT_RANGES} 段,请减少范围数量`)
+            break
+          }
           const ranges = parseRanges(splitRanges.value)
           // 输入全为无效片段时提前提示,避免用户选完文件才收到后端报错
           if (!ranges.length) {

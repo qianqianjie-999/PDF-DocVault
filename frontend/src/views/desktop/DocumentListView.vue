@@ -183,8 +183,23 @@ async function editTags(doc: Document) {
   } catch {
     return // 用户取消
   }
+  // 先校验并规范化:此前非法 JSON 会被原样入库,标签筛选与搜索随之失效
+  let parsed: unknown
   try {
-    await documentApi.tag(doc.id, value || '[]')
+    parsed = JSON.parse(value || '[]')
+  } catch {
+    ElMessage.warning('标签格式有误,请使用 JSON 数组,如 ["发票","2026"]')
+    return
+  }
+  if (!Array.isArray(parsed) || parsed.some((t) => typeof t !== 'string')) {
+    ElMessage.warning('标签必须是字符串数组,如 ["发票","2026"]')
+    return
+  }
+  const normalized = JSON.stringify(
+    parsed.map((t) => (t as string).trim()).filter((t) => t.length > 0),
+  )
+  try {
+    await documentApi.tag(doc.id, normalized)
     ElMessage.success('已更新')
     // 标签参与索引,搜索态下同步刷新
     if (searchResults.value) await doSearch()

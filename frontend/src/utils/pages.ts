@@ -12,6 +12,9 @@ const SINGLE_RE = /^\d+$/
 /** 单次输入最多展开的页码数:超过即视为非法输入,避免超大区间拖死主线程 */
 export const MAX_EXPANDED_PAGES = 10000
 
+/** 一次拆分最多允许的范围段数:每段都会生成一个独立文件,过多会长时间占用磁盘与 CPU */
+export const MAX_SPLIT_RANGES = 1000
+
 /**
  * 解析页码输入为 1-based 页码列表,支持逗号分隔的单页与闭区间范围,
  * 如 "1,3,5-8" → [1,3,5,6,7,8];"8-5" 视为 "5-8",输出保持输入顺序。
@@ -72,12 +75,14 @@ export function parseRanges(input: string): PageRange[] {
       const a = parseInt(range[1], 10)
       const b = parseInt(range[2], 10)
       if (a < 1 || b < 1) return []
+      if (ranges.length >= MAX_SPLIT_RANGES) return []
       ranges.push({ start: Math.min(a, b), end: Math.max(a, b) })
       continue
     }
     if (!SINGLE_RE.test(t)) return []
     const n = parseInt(t, 10)
     if (n < 1) return []
+    if (ranges.length >= MAX_SPLIT_RANGES) return []
     ranges.push({ start: n, end: n })
   }
   return ranges

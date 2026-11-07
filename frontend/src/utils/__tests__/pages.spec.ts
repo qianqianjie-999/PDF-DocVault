@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { pageInputInvalid, parsePageNums, parseRanges } from '@/utils/pages'
+import {
+  MAX_SPLIT_RANGES,
+  pageInputInvalid,
+  parsePageNums,
+  parseRanges,
+} from '@/utils/pages'
 
 describe('parsePageNums', () => {
   it('展开单页与闭区间,保持输入顺序', () => {
@@ -78,5 +83,12 @@ describe('parseRanges', () => {
 
   it('空输入返回空数组', () => {
     expect(parseRanges('')).toEqual([])
+  })
+
+  it('范围段数超过上限时整体判无效,不生成海量拆分文件', () => {
+    const limit = Array.from({ length: MAX_SPLIT_RANGES }, () => '1').join(',')
+    expect(parseRanges(limit)).toHaveLength(MAX_SPLIT_RANGES)
+    const over = Array.from({ length: MAX_SPLIT_RANGES + 1 }, () => '1').join(',')
+    expect(parseRanges(over)).toEqual([])
   })
 })

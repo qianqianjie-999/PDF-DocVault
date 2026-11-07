@@ -76,11 +76,20 @@ function onSelect(items: { path: string; name: string }[]) {
 
 function removeFile(idx: number) {
   files.value.splice(idx, 1)
+  // 输入文件变了,旧识别结果不再对应当前列表,一并清空避免误导出
+  resetResults()
 }
 
 function clearFiles() {
   files.value = []
+  resetResults()
+}
+
+function resetResults() {
   pages.value = []
+  engineUsed.value = ''
+  elapsedMs.value = 0
+  activeTab.value = '0'
 }
 
 async function withProgress<T>(taskId: string, fn: () => Promise<T>): Promise<T> {
