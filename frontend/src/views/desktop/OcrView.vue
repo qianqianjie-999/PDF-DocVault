@@ -135,7 +135,10 @@ async function runOcr() {
     ElMessage.error(`OCR 识别失败: ${e?.message ?? e}`)
   } finally {
     running.value = false
-    setTimeout(() => (showProgress.value = false), 800)
+    // 用户可能在隐藏延迟内又开始下一轮,此时不能再把新一轮的进度层收掉
+    setTimeout(() => {
+      if (!running.value) showProgress.value = false
+    }, 800)
   }
 }
 
@@ -176,7 +179,10 @@ async function runConvert(mode: ConvertMode) {
     ElMessage.error(`转换失败: ${e?.message ?? e}`)
   } finally {
     running.value = false
-    setTimeout(() => (showProgress.value = false), 800)
+    // 用户可能在隐藏延迟内又开始下一轮,此时不能再把新一轮的进度层收掉
+    setTimeout(() => {
+      if (!running.value) showProgress.value = false
+    }, 800)
   }
 }
 

@@ -228,6 +228,12 @@ async function run() {
         break
       }
       case 'encrypt': {
+        // 探测确认源文件已加密时直接拦下:加密链路不会先解密输入,
+        // 继续执行只会得到与「设置新密码」无关的密码错误提示
+        if (encryptProbe.value?.encrypted) {
+          ElMessage.warning('该文件已加密,请先在「解密」中去除原有加密')
+          break
+        }
         const pw = encryptPassword.value.trim()
         if (!pw) {
           ElMessage.warning('请先设置打开密码')
@@ -352,7 +358,10 @@ async function run() {
     ElMessage.error(`处理失败: ${e?.message ?? e}`)
   } finally {
     running.value = false
-    setTimeout(() => (showProgress.value = false), 800)
+    // 用户可能在隐藏延迟内又开始下一轮,此时不能再把新一轮的进度层收掉
+    setTimeout(() => {
+      if (!running.value) showProgress.value = false
+    }, 800)
   }
 }
 </script>

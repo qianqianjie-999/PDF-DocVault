@@ -36,10 +36,17 @@ const keywordTokens = computed(() =>
 const rows = computed(() => searchResults.value ?? documents.value)
 
 async function doSearch() {
+  // 回车立即搜索与防抖搜索共用,先撤销待触发的防抖,避免同一关键词请求两次
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+    searchTimer = null
+  }
   const kw = keyword.value.trim()
-  // 仅以关键词驱动搜索;类型筛选只是搜索的辅助条件,空关键词直接退出搜索态
+  // 仅以关键词驱动搜索;类型筛选只是搜索的辅助条件
+  // 关键词被清空时必须同步退出搜索态并刷新列表,否则表格会停在旧搜索结果上
   if (!kw) {
     searchResults.value = null
+    await load()
     return
   }
   searching.value = true
@@ -64,10 +71,18 @@ function onTypeChange() {
   // 无关键词时类型筛选走列表查询,有关键词时并入全文搜索
   page.value = 1
   if (keyword.value.trim()) void doSearch()
-  else void load()
+  else {
+    // 防抖中的搜索尚未执行时,先退出搜索态,避免旧结果遮挡新列表
+    searchResults.value = null
+    void load()
+  }
 }
 
 function clearSearch() {
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+    searchTimer = null
+  }
   keyword.value = ''
   fileType.value = ''
   searchResults.value = null

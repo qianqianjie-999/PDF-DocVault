@@ -19,6 +19,13 @@ describe('useFilesStore', () => {
     expect(store.selectedFiles.map((s) => s.name)).toEqual(['a.pdf', 'b.pdf'])
   })
 
+  it('Windows 路径大小写或分隔符不同的等价路径不重复入列', () => {
+    const store = useFilesStore()
+    store.addFiles([f('C:\\Docs\\A.pdf')])
+    store.addFiles([f('c:/docs/a.pdf', 'a.PDF')])
+    expect(store.selectedFiles).toHaveLength(1)
+  })
+
   it('removeFile 只删除匹配路径', () => {
     const store = useFilesStore()
     store.addFiles([f('/tmp/a.pdf'), f('/tmp/b.pdf', 'b.pdf')])

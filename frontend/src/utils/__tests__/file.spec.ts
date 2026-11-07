@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { matchesAccept, samePath } from '@/utils/file'
+import { ensurePdfExtension, matchesAccept, samePath } from '@/utils/file'
 
 // matchesAccept:拖拽路径按 accept 列表过滤扩展名
 describe('matchesAccept', () => {
@@ -20,6 +20,24 @@ describe('matchesAccept', () => {
 
   it('无扩展名的文件在有 accept 时被拒绝', () => {
     expect(matchesAccept('/tmp/README', 'pdf')).toBe(false)
+  })
+})
+
+// ensurePdfExtension:手动输入输出路径时补全后缀
+describe('ensurePdfExtension', () => {
+  it('缺少后缀时追加 .pdf', () => {
+    expect(ensurePdfExtension('/tmp/out')).toBe('/tmp/out.pdf')
+    expect(ensurePdfExtension('/tmp/out.txt')).toBe('/tmp/out.txt.pdf')
+  })
+
+  it('已有 .pdf 后缀(大小写不敏感)时不重复追加', () => {
+    expect(ensurePdfExtension('/tmp/out.pdf')).toBe('/tmp/out.pdf')
+    expect(ensurePdfExtension('/tmp/out.PDF')).toBe('/tmp/out.PDF')
+  })
+
+  it('去掉首尾空白,空白路径返回空串', () => {
+    expect(ensurePdfExtension('  /tmp/out.pdf  ')).toBe('/tmp/out.pdf')
+    expect(ensurePdfExtension('   ')).toBe('')
   })
 })
 

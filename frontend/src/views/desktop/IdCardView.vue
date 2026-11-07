@@ -108,7 +108,10 @@ async function generate() {
     ElMessage.error(`证件排版失败: ${e?.message ?? e}`)
   } finally {
     running.value = false
-    setTimeout(() => (progress.value = 0), 600)
+    // 新一轮已启动时不能清零进度,否则进度条会消失到下一次事件上报
+    setTimeout(() => {
+      if (!running.value) progress.value = 0
+    }, 600)
   }
 }
 </script>

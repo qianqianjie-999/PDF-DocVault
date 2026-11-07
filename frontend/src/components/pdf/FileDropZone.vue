@@ -45,7 +45,14 @@ async function pickFiles() {
   })
   if (!selected) return
   const arr = Array.isArray(selected) ? selected : [selected]
-  const items = await Promise.all(arr.map(toSelectedFile))
+  // 对话框 filters 并非所有平台都强制生效(如 Linux 可切换「所有文件」),
+  // 回到前端后再按 accept 过滤一次,与拖拽路径保持一致
+  const accepted = arr.filter((p) => matchesAccept(p, props.accept))
+  if (!accepted.length) {
+    ElMessage.warning('不支持的文件类型')
+    return
+  }
+  const items = await Promise.all(accepted.map(toSelectedFile))
   emit('select', items)
 }
 

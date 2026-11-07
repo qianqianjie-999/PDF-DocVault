@@ -61,7 +61,11 @@ const ENGINE_LABELS: Record<string, string> = {
 const engineLabel = (e: string) => ENGINE_LABELS[e] ?? e
 
 const canRun = computed(
-  () => !running.value && files.value.length > 0 && outputDir.value && env.value?.ok,
+  () =>
+    !running.value &&
+    files.value.length > 0 &&
+    outputDir.value.trim() !== '' &&
+    env.value?.ok,
 )
 
 onMounted(async () => {
@@ -148,6 +152,8 @@ async function withProgress<T>(taskId: string, fn: () => Promise<T>): Promise<T>
 
 async function runConvert() {
   if (!canRun.value) return
+  // 输入框允许手动编辑,去掉首尾空白再保存与传参
+  outputDir.value = outputDir.value.trim()
   localStorage.setItem(LAST_DIR_KEY, outputDir.value)
 
   running.value = true
@@ -185,7 +191,10 @@ async function runConvert() {
     ElMessage.error(`转换失败: ${e?.message ?? e}`)
   } finally {
     running.value = false
-    setTimeout(() => (showProgress.value = false), 800)
+    // 用户可能在隐藏延迟内又开始下一轮,此时不能再把新一轮的进度层收掉
+    setTimeout(() => {
+      if (!running.value) showProgress.value = false
+    }, 800)
   }
 }
 

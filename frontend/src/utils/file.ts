@@ -40,6 +40,17 @@ export function joinPath(dir: string, name: string): string {
   return `${dir.replace(/[\\/]+$/, '')}/${name}`
 }
 
+/**
+ * 补全 PDF 输出路径的扩展名。
+ * 保存对话框会自动加 `.pdf`,但输入框允许手动填写,缺失后缀会生成无扩展名文件,
+ * 系统既无法按类型关联也无法被部分阅读器识别。
+ */
+export function ensurePdfExtension(path: string): string {
+  const trimmed = path.trim()
+  if (!trimmed) return ''
+  return /\.pdf$/i.test(trimmed) ? trimmed : `${trimmed}.pdf`
+}
+
 /** 判断两个路径是否指向同一个文件(用于阻断「输出覆盖源文件」) */
 export function samePath(a: string, b: string): boolean {
   if (!a || !b) return false

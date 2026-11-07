@@ -8,7 +8,7 @@ import FileDropZone from '@/components/pdf/FileDropZone.vue'
 import ProgressOverlay from '@/components/pdf/ProgressOverlay.vue'
 import { scanApi } from '@/api/scan'
 import { useSettingsStore } from '@/stores/settings'
-import { basename, dirname, joinPath } from '@/utils/file'
+import { basename, dirname, ensurePdfExtension, joinPath } from '@/utils/file'
 import { openOutput } from '@/utils/openOutput'
 import type {
   GridOrder,
@@ -73,7 +73,9 @@ const perPageOptions: Array<{ value: ImagesPerA4; label: string; desc: string }>
   { value: 'four', label: '4 张/页', desc: '2×2 网格,适合多图汇总' },
 ]
 
-const canRun = computed(() => !running.value && files.value.length > 0 && !!outputPath.value)
+const canRun = computed(
+  () => !running.value && files.value.length > 0 && !!ensurePdfExtension(outputPath.value),
+)
 
 /** 根据排版密度预估页数 */
 const estimatedPages = computed(() => {
@@ -156,6 +158,8 @@ async function withProgress<T>(taskId: string, fn: () => Promise<T>): Promise<T>
 
 async function runConvert() {
   if (!canRun.value) return
+  // 手动输入常缺后缀,统一补全后再交给后端,避免生成系统无法识别的无扩展名文件
+  outputPath.value = ensurePdfExtension(outputPath.value)
   running.value = true
   showProgress.value = true
   progress.value = 0
@@ -195,7 +199,10 @@ async function runConvert() {
     ElMessage.error(`合成 PDF 失败:${e?.message ?? e}`)
   } finally {
     running.value = false
-    setTimeout(() => (showProgress.value = false), 800)
+    // 用户可能在隐藏延迟内又开始下一轮,此时不能再把新一轮的进度层收掉
+    setTimeout(() => {
+      if (!running.value) showProgress.value = false
+    }, 800)
   }
 }
 </script>

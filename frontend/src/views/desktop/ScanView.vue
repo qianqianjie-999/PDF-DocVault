@@ -129,7 +129,10 @@ async function runEnhance() {
     ElMessage.error(`扫描增强失败: ${e?.message ?? e}`)
   } finally {
     running.value = false
-    setTimeout(() => (showProgress.value = false), 800)
+    // 用户可能在隐藏延迟内又开始下一轮,此时不能再把新一轮的进度层收掉
+    setTimeout(() => {
+      if (!running.value) showProgress.value = false
+    }, 800)
   }
 }
 
@@ -167,7 +170,10 @@ async function runRemoveHandwriting() {
     ElMessage.error(`去手写失败: ${e?.message ?? e}`)
   } finally {
     running.value = false
-    setTimeout(() => (showProgress.value = false), 800)
+    // 用户可能在隐藏延迟内又开始下一轮,此时不能再把新一轮的进度层收掉
+    setTimeout(() => {
+      if (!running.value) showProgress.value = false
+    }, 800)
   }
 }
 
@@ -198,7 +204,10 @@ async function runToPdf() {
     ElMessage.error(`合成 PDF 失败: ${e?.message ?? e}`)
   } finally {
     running.value = false
-    setTimeout(() => (showProgress.value = false), 800)
+    // 用户可能在隐藏延迟内又开始下一轮,此时不能再把新一轮的进度层收掉
+    setTimeout(() => {
+      if (!running.value) showProgress.value = false
+    }, 800)
   }
 }
 </script>
