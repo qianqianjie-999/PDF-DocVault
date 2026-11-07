@@ -6,7 +6,7 @@ import { pdfApi } from '@/api/pdf'
 import { useFilesStore } from '@/stores/files'
 import { useTaskStore } from '@/stores/task'
 import { useSettingsStore } from '@/stores/settings'
-import { basename, dirname, formatFileSize, joinPath } from '@/utils/file'
+import { basename, dirname, formatFileSize, joinPath, samePath } from '@/utils/file'
 import { pageInputInvalid, parsePageNums, parseRanges } from '@/utils/pages'
 import { openOutput } from '@/utils/openOutput'
 import ProgressOverlay from './ProgressOverlay.vue'
@@ -117,13 +117,25 @@ const canRun = computed(() => {
   return filesStore.selectedFiles.length > 0
 })
 
-async function pickOutput(defaultName: string): Promise<string | null> {
+async function pickOutput(
+  defaultName: string,
+  inputs?: string | string[],
+): Promise<string | null> {
   // 设置页配置的默认输出目录优先生效,留空则由系统记住上次位置
   const dir = settings.defaultOutputDir.trim()
-  return await save({
+  const out = await save({
     defaultPath: dir ? joinPath(dir, defaultName) : defaultName,
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   })
+  if (!out) return null
+  // 保存对话框允许选中已有文件,若恰好是源文件,后续会静默覆盖原件(加密/解密等
+  // 路径甚至可能直接失败),这里统一拦截并提示用户换名
+  const sources = inputs === undefined ? [] : Array.isArray(inputs) ? inputs : [inputs]
+  if (sources.some((p) => samePath(out, p))) {
+    ElMessage.warning('输出文件不能与源文件相同,请更换文件名或目录')
+    return null
+  }
+  return out
 }
 
 async function run() {
@@ -141,7 +153,10 @@ async function run() {
   try {
     switch (op.value) {
       case 'merge': {
-        const out = await pickOutput('merged.pdf')
+        const out = await pickOutput(
+          'merged.pdf',
+          files.map((f) => f.path),
+        )
         if (!out) break
         const res = await pdfApi.merge(files.map((f) => f.path), out)
         ElMessage.success(`合并完成: ${res.pages} 页,耗时 ${res.elapsed_ms}ms`)
@@ -179,7 +194,7 @@ async function run() {
           break
         }
         const first = files[0].path
-        const out = await pickOutput(`rotated-${basename(first)}`)
+        const out = await pickOutput(`rotated-${basename(first)}`, first)
         if (!out) break
         await pdfApi.rotate(first, parsePageNums(pageInput.value), rotateDegrees.value, out)
         ElMessage.success('旋转完成')
@@ -192,7 +207,7 @@ async function run() {
           break
         }
         const first = files[0].path
-        const out = await pickOutput(`trimmed-${basename(first)}`)
+        const out = await pickOutput(`trimmed-${basename(first)}`, first)
         if (!out) break
         await pdfApi.deletePages(first, parsePageNums(pageInput.value), out)
         ElMessage.success('删除页面完成')
@@ -205,7 +220,7 @@ async function run() {
           break
         }
         const first = files[0].path
-        const out = await pickOutput(`extracted-${basename(first)}`)
+        const out = await pickOutput(`extracted-${basename(first)}`, first)
         if (!out) break
         await pdfApi.extract(first, parsePageNums(pageInput.value), out)
         ElMessage.success('提取完成')
@@ -224,7 +239,7 @@ async function run() {
           break
         }
         const first = files[0].path
-        const out = await pickOutput(`encrypted-${basename(first)}`)
+        const out = await pickOutput(`encrypted-${basename(first)}`, first)
         if (!out) break
         const rep = await pdfApi.encrypt(first, out, {
           user_password: pw,
@@ -246,7 +261,7 @@ async function run() {
           break
         }
         const first = files[0].path
-        const out = await pickOutput(`decrypted-${basename(first)}`)
+        const out = await pickOutput(`decrypted-${basename(first)}`, first)
         if (!out) break
         const rep = await pdfApi.decrypt(first, out, decryptPassword.value)
         ElMessage.success(
@@ -263,7 +278,7 @@ async function run() {
           break
         }
         const first = files[0].path
-        const out = await pickOutput(`watermarked-${basename(first)}`)
+        const out = await pickOutput(`watermarked-${basename(first)}`, first)
         if (!out) break
         await pdfApi.watermark(first, out, {
           text: watermarkText.value,
@@ -282,7 +297,7 @@ async function run() {
       }
       case 'compress': {
         const first = files[0].path
-        const out = await pickOutput(`compressed-${basename(first)}`)
+        const out = await pickOutput(`compressed-${basename(first)}`, first)
         if (!out) break
         const res = await pdfApi.compress(first, out, compressLevel.value)
         if (res.fell_back) {

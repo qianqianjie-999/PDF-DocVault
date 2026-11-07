@@ -108,39 +108,60 @@ fn find_cjk_font() -> Option<PathBuf> {
     candidates.iter().map(PathBuf::from).find(|p| p.is_file())
 }
 
+/// 标签宽于可用区域时按比例缩小字号;返回不小于 1 的字号。
+fn fit_label_size(measured: f32, px_size: f32, max_width: f32) -> f32 {
+    if measured <= 0.0 || max_width <= 0.0 || measured <= max_width {
+        return px_size;
+    }
+    (px_size * max_width / measured).max(1.0)
+}
+
 /// 在画布 (cx, top) 顶部水平居中绘制一行文字,返回是否成功。
 ///
 /// 使用 ab_glyph 直接栅格化(imageproc 0.25.1 已移除 text 模块,故自绘),
-/// 白底黑字 alpha 混合。
+/// 白底黑字 alpha 混合。文字宽度超过 `max_width` 时自动缩小字号,
+/// 避免长标签被页面左右边缘静默裁掉。
 fn draw_label_centered(
     canvas: &mut RgbImage,
     text: &str,
     cx: i64,
     top: i64,
     px_size: f32,
+    max_width: f32,
     font: &ab_glyph::FontArc,
 ) -> bool {
     // into_scaled 在 Font trait;其余方法在 ScaleFont trait
     use ab_glyph::{Font as _, ScaleFont as _};
 
-    let pf = font.clone().into_scaled(ab_glyph::PxScale::from(px_size));
+    let layout = |px: f32| {
+        let pf = font.clone().into_scaled(ab_glyph::PxScale::from(px));
+        // 逐字布置字形并累计总宽
+        let mut glyphs: Vec<ab_glyph::Glyph> = Vec::with_capacity(text.chars().count());
+        let mut width = 0.0f32;
+        for c in text.chars() {
+            let mut g = pf.scaled_glyph(c);
+            g.position = ab_glyph::point(width, 0.0);
+            width += pf.h_advance(g.id);
+            glyphs.push(g);
+        }
+        (pf, glyphs, width)
+    };
 
-    // 逐字布置字形并累计总宽
-    let mut glyphs: Vec<ab_glyph::Glyph> = Vec::with_capacity(text.chars().count());
-    let mut width = 0.0f32;
-    for c in text.chars() {
-        let mut g = pf.scaled_glyph(c);
-        g.position = ab_glyph::point(width, 0.0);
-        width += pf.h_advance(g.id);
-        glyphs.push(g);
+    let (mut pf, mut glyphs, mut width) = layout(px_size);
+    if width <= 0.0 {
+        return false;
+    }
+    if width > max_width && max_width > 0.0 {
+        let fitted = fit_label_size(width, px_size, max_width);
+        let scaled = layout(fitted);
+        pf = scaled.0;
+        glyphs = scaled.1;
+        width = scaled.2;
     }
     if width <= 0.0 {
         return false;
     }
-    let start_x = cx as f32 - width / 2.0;
-    if start_x < 0.0 {
-        return false;
-    }
+    let start_x = (cx as f32 - width / 2.0).max(0.0);
     let pen_y = top as f32 + pf.ascent();
 
     for g in glyphs {
@@ -244,6 +265,7 @@ pub fn id_cards_to_pdf(
                     page_w as i64 / 2,
                     slot_top + slot_h,
                     label_px as f32,
+                    slot_w as f32,
                     f,
                 ) {
                     labeled = true;
@@ -334,6 +356,19 @@ mod tests {
         // pt 与 mm 换算闭环
         assert!((A4_W_PT * MM_PER_PT - 210.0).abs() < 0.01);
         assert!((A4_H_PT * MM_PER_PT - 297.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_fit_label_size() {
+        // 未超宽时字号不变
+        assert_eq!(fit_label_size(300.0, 40.0, 1000.0), 40.0);
+        // 超宽时按比例缩小到可用宽度
+        assert!((fit_label_size(2000.0, 40.0, 1000.0) - 20.0).abs() < 0.01);
+        // 极端情况下不小于 1
+        assert_eq!(fit_label_size(1e9, 40.0, 10.0), 1.0);
+        // 非法测量值不处理
+        assert_eq!(fit_label_size(0.0, 40.0, 1000.0), 40.0);
+        assert_eq!(fit_label_size(500.0, 40.0, 0.0), 40.0);
     }
 
     #[test]
