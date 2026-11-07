@@ -162,6 +162,11 @@ async function runConvert(mode: ConvertMode) {
       : [{ name: 'Word', extensions: ['docx'] }],
   })
   if (!out) return
+  // 输出路径若与待识别图片/PDF 相同,转换时会直接覆盖原件
+  if (files.value.some((f) => samePath(out as string, f.path))) {
+    ElMessage.warning('输出文件不能与待识别文件相同,请更换文件名或目录')
+    return
+  }
   running.value = true
   showProgress.value = true
   progress.value = 0
@@ -212,6 +217,11 @@ async function exportTxt() {
     filters: [{ name: '文本', extensions: ['txt'] }],
   })
   if (!out) return
+  // 同理:TXT 保存位置不能覆盖任何一个输入原件
+  if (files.value.some((f) => samePath(out as string, f.path))) {
+    ElMessage.warning('输出文件不能与待识别文件相同,请更换文件名或目录')
+    return
+  }
   try {
     // 走后端写入:用户可能保存到 HOME 之外的盘符,前端 fs 会被 scope 拒绝
     await ocrApi.saveText(out as string, allText.value)

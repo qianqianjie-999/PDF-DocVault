@@ -71,14 +71,16 @@ const encryptPermissions = reactive({
 const decryptPassword = ref('')
 const encryptProbe = ref<EncryptionInfo | null>(null)
 
-// 切到加密/解密面板或换文件时探测一次:
+// 切到加密/解密/旋转/删除/提取/水印/压缩面板或换文件时探测一次:
 // - 加密页据此提示「已加密,请先解密」,否则用户点加密只会收到「密码错误」;
-// - 解密页据此区分「需要打开密码」与「仅限制权限」,后者允许空密码直接解密。
+// - 解密页据此区分「需要打开密码」与「仅限制权限」,后者允许空密码直接解密;
+// - 其余单文件页据此提前拦截加密 PDF,避免用户选完输出路径才报错。
+const ENCRYPT_PROBE_OPS: OpType[] = ['encrypt', 'decrypt', 'rotate', 'delete', 'extract', 'watermark', 'compress']
 watch(
   () => [op.value, filesStore.selectedFiles[0]?.path] as const,
   async () => {
     encryptProbe.value = null
-    if (!['encrypt', 'decrypt'].includes(op.value) || filesStore.selectedFiles.length !== 1) return
+    if (!ENCRYPT_PROBE_OPS.includes(op.value) || filesStore.selectedFiles.length !== 1) return
     try {
       encryptProbe.value = await pdfApi.probeEncryption(filesStore.selectedFiles[0].path)
     } catch {
@@ -204,6 +206,11 @@ async function run() {
           ElMessage.warning('页码格式有误,请使用如 1,3,5-8 的写法')
           break
         }
+        // 需要打开密码的加密 PDF 无法旋转,提前给出与「解密」一致的提示
+        if (encryptProbe.value?.locked) {
+          ElMessage.warning('该文件已加密,请先在「解密」中去除原有加密')
+          break
+        }
         const first = files[0].path
         const out = await pickOutput(`rotated-${basename(first)}`, first)
         if (!out) break
@@ -217,6 +224,10 @@ async function run() {
           ElMessage.warning('页码格式有误,请使用如 1,3,5-8 的写法')
           break
         }
+        if (encryptProbe.value?.locked) {
+          ElMessage.warning('该文件已加密,请先在「解密」中去除原有加密')
+          break
+        }
         const first = files[0].path
         const out = await pickOutput(`trimmed-${basename(first)}`, first)
         if (!out) break
@@ -228,6 +239,10 @@ async function run() {
       case 'extract': {
         if (pageInputInvalid(pageInput.value)) {
           ElMessage.warning('页码格式有误,请使用如 1,3,5-8 的写法')
+          break
+        }
+        if (encryptProbe.value?.locked) {
+          ElMessage.warning('该文件已加密,请先在「解密」中去除原有加密')
           break
         }
         const first = files[0].path
@@ -294,6 +309,10 @@ async function run() {
           ElMessage.warning('请输入水印文本')
           break
         }
+        if (encryptProbe.value?.locked) {
+          ElMessage.warning('该文件已加密,请先在「解密」中去除原有加密')
+          break
+        }
         const first = files[0].path
         const out = await pickOutput(`watermarked-${basename(first)}`, first)
         if (!out) break
@@ -313,6 +332,10 @@ async function run() {
         break
       }
       case 'compress': {
+        if (encryptProbe.value?.locked) {
+          ElMessage.warning('该文件已加密,请先在「解密」中去除原有加密')
+          break
+        }
         const first = files[0].path
         const out = await pickOutput(`compressed-${basename(first)}`, first)
         if (!out) break

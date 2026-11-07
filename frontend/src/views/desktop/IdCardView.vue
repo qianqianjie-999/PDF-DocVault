@@ -6,7 +6,7 @@ import { Plus, Picture } from '@element-plus/icons-vue'
 import PageHeader from '@/components/common/PageHeader.vue'
 import { idCardApi, type IdCardOptions } from '@/api/idcard'
 import { useSettingsStore } from '@/stores/settings'
-import { basename } from '@/utils/file'
+import { basename, samePath } from '@/utils/file'
 import { openOutput } from '@/utils/openOutput'
 import type { ScanOptions } from '@/types/scan'
 
@@ -84,6 +84,11 @@ async function generate() {
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   })
   if (!out) return
+  // 保存对话框允许选到已存在的文件,若恰好是证件照片本身,排版会覆盖原件
+  if (samePath(out as string, front.value.path as string) || samePath(out as string, back.value.path as string)) {
+    ElMessage.warning('输出文件不能与证件照片相同,请更换文件名或目录')
+    return
+  }
   running.value = true
   progress.value = 0
   try {

@@ -160,6 +160,11 @@ async function runConvert() {
   if (!canRun.value) return
   // 手动输入常缺后缀,统一补全后再交给后端,避免生成系统无法识别的无扩展名文件
   outputPath.value = ensurePdfExtension(outputPath.value)
+  // 输入框可手动粘贴路径:输出不能与列表中任何一个源文件重名,否则合成会覆盖原件
+  if (files.value.some((f) => samePath(outputPath.value, f.path))) {
+    ElMessage.warning('输出文件不能与源图片相同,请更换文件名或目录')
+    return
+  }
   running.value = true
   showProgress.value = true
   progress.value = 0

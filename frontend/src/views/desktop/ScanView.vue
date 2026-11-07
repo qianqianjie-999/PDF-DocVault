@@ -184,6 +184,11 @@ async function runToPdf() {
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   })
   if (!out) return
+  // 保存对话框允许选到已存在的文件,若恰好是待扫描图片本身,合成会覆盖原件
+  if (files.value.some((f) => samePath(out as string, f.path))) {
+    ElMessage.warning('输出文件不能与待合成图片相同,请更换文件名或目录')
+    return
+  }
   running.value = true
   showProgress.value = true
   progress.value = 0
