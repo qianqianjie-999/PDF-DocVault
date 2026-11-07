@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { save } from '@tauri-apps/plugin-dialog'
-import { writeFile } from '@tauri-apps/plugin-fs'
 import { ElMessage } from 'element-plus'
 import PageHeader from '@/components/common/PageHeader.vue'
 import FileDropZone from '@/components/pdf/FileDropZone.vue'
 import ProgressOverlay from '@/components/pdf/ProgressOverlay.vue'
 import { ocrApi } from '@/api/ocr'
 import { useSettingsStore } from '@/stores/settings'
-import { basename } from '@/utils/file'
+import { basename, samePath } from '@/utils/file'
 import { openOutput } from '@/utils/openOutput'
 import type { ConvertMode, OcrOptions, OcrPage, OcrSelftestOutput } from '@/types/ocr'
 
@@ -70,7 +69,7 @@ async function checkEnv() {
 function onSelect(items: { path: string; name: string }[]) {
   for (const it of items) {
     if (!ACCEPT_EXT.test(it.path)) continue
-    if (files.value.some((f) => f.path === it.path)) continue
+    if (files.value.some((f) => samePath(f.path, it.path))) continue
     files.value.push({ path: it.path, name: it.name, isPdf: PDF_EXT.test(it.path) })
   }
 }
@@ -205,7 +204,8 @@ async function exportTxt() {
   })
   if (!out) return
   try {
-    await writeFile(out, new TextEncoder().encode(allText.value))
+    // 走后端写入:用户可能保存到 HOME 之外的盘符,前端 fs 会被 scope 拒绝
+    await ocrApi.saveText(out as string, allText.value)
     ElMessage.success(`已导出: ${basename(out)}`)
     openOutput({ output: out as string })
   } catch (e: any) {

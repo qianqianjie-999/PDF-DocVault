@@ -8,7 +8,7 @@ import FileDropZone from '@/components/pdf/FileDropZone.vue'
 import ProgressOverlay from '@/components/pdf/ProgressOverlay.vue'
 import { officeApi } from '@/api/office'
 import { useSettingsStore } from '@/stores/settings'
-import { basename, dirname } from '@/utils/file'
+import { basename, dirname, samePath } from '@/utils/file'
 import { openOutput } from '@/utils/openOutput'
 import { invoke } from '@tauri-apps/api/core'
 import type {
@@ -96,7 +96,7 @@ async function checkEnv() {
 function onSelect(items: { path: string; name: string }[]) {
   for (const it of items) {
     if (!ACCEPT_EXT.test(it.path)) continue
-    if (files.value.some((f) => f.path === it.path)) continue
+    if (files.value.some((f) => samePath(f.path, it.path))) continue
     files.value.push({ path: it.path, name: it.name })
   }
   // 首次添加且输出目录为空:默认源文件所在目录

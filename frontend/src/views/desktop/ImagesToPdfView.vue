@@ -8,7 +8,7 @@ import FileDropZone from '@/components/pdf/FileDropZone.vue'
 import ProgressOverlay from '@/components/pdf/ProgressOverlay.vue'
 import { scanApi } from '@/api/scan'
 import { useSettingsStore } from '@/stores/settings'
-import { basename, dirname, ensurePdfExtension, joinPath } from '@/utils/file'
+import { basename, dirname, ensurePdfExtension, joinPath, samePath } from '@/utils/file'
 import { openOutput } from '@/utils/openOutput'
 import type {
   GridOrder,
@@ -89,7 +89,7 @@ function onSelect(items: { path: string; name: string }[]) {
   let added = false
   for (const it of items) {
     if (!ACCEPT_EXT.test(it.path)) continue
-    if (files.value.some((f) => f.path === it.path)) continue
+    if (files.value.some((f) => samePath(f.path, it.path))) continue
     files.value.push({ path: it.path, name: it.name })
     added = true
   }

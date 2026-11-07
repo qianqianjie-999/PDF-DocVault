@@ -8,7 +8,7 @@ import FileDropZone from '@/components/pdf/FileDropZone.vue'
 import ProgressOverlay from '@/components/pdf/ProgressOverlay.vue'
 import { scanApi } from '@/api/scan'
 import { useSettingsStore } from '@/stores/settings'
-import { basename, dirname } from '@/utils/file'
+import { basename, dirname, samePath } from '@/utils/file'
 import { openOutput } from '@/utils/openOutput'
 import type { ScanOptions } from '@/types/scan'
 
@@ -55,7 +55,7 @@ function onSelect(items: { path: string; name: string }[]) {
   const IMAGE_EXT = /\.(png|jpe?g|webp|bmp|tiff?|gif)$/i
   for (const it of items) {
     if (!IMAGE_EXT.test(it.path)) continue
-    if (files.value.some((f) => f.path === it.path)) continue
+    if (files.value.some((f) => samePath(f.path, it.path))) continue
     files.value.push({ path: it.path, name: it.name })
   }
 }

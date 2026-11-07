@@ -19,9 +19,9 @@ const emit = defineEmits<{ (e: 'select', files: SelectedFile[]): void }>()
 async function toSelectedFile(p: string): Promise<SelectedFile> {
   let size = 0
   try {
-    const fs = await import('@tauri-apps/plugin-fs')
-    const stat = await fs.stat(p)
-    size = Number(stat.size) || 0
+    // 走后端而不是前端 fs 插件:HOME 之外的路径不受 scope 限制
+    const { invoke } = await import('@tauri-apps/api/core')
+    size = Number(await invoke<number>('file_size', { path: p })) || 0
   } catch {
     /* 读取失败时体积显示为 0,不影响后续处理 */
   }

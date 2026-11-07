@@ -34,6 +34,22 @@ pub fn open_path(path: String) -> Result<(), String> {
     }
 }
 
+/// 读取文件字节数。
+/// 前端 fs 插件受 capabilities 的 scope 限制,选择 HOME 之外的盘符(如 Windows D 盘)会失败,
+/// 统一走后端才能让文件列表在任何位置都显示真实体积。
+#[tauri::command]
+pub fn file_size(path: String) -> Result<u64, String> {
+    std::fs::metadata(&path)
+        .map(|m| m.len())
+        .map_err(|e| format!("读取文件信息失败: {}", e))
+}
+
+/// 将文本写入用户选择的路径(同样绕开前端 fs scope)
+#[tauri::command]
+pub fn write_text_file(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, content).map_err(|e| format!("写入文件失败: {}", e))
+}
+
 /// 打开文件所在文件夹并高亮该文件(Linux 退化为打开父目录)
 #[tauri::command]
 pub fn reveal_path(path: String) -> Result<(), String> {

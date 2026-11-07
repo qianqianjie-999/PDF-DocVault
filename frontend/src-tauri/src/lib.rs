@@ -136,7 +136,9 @@ pub fn run() {
             task_commands::cancel_task,
             // 系统交互
             system_commands::open_path,
-            system_commands::reveal_path
+            system_commands::reveal_path,
+            system_commands::file_size,
+            system_commands::write_text_file
         ])
         .run(tauri::generate_context!())
         .expect("运行 PDF-DocVault 时发生错误");

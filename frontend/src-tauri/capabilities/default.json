@@ -18,22 +18,6 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "dialog:allow-message",
-    "fs:allow-read-file",
-    "fs:allow-write-file",
-    "fs:allow-read-dir",
-    "fs:allow-exists",
-    "fs:allow-stat",
-    "fs:allow-mkdir",
-    {
-      "identifier": "fs:scope",
-      "allow": [
-        { "path": "$HOME/**" },
-        { "path": "$DOCUMENT/**" },
-        { "path": "$APPDATA/**" },
-        { "path": "$APPLOCALDATA/**" },
-        { "path": "$TEMP/**" }
-      ]
-    },
     "shell:allow-execute",
     "shell:allow-open",
     "os:default"

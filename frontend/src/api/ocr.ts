@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core'
 import { call } from './index'
 import type { ConvertMode, ConvertStats, OcrOptions, OcrSelftestOutput, OcrStats } from '@/types/ocr'
 
@@ -10,6 +11,10 @@ export const ocrApi = {
     call<OcrStats>('ocr_extract_images', {
       input: { inputs, options, task_id: taskId },
     }),
+
+  /** 导出识别文本;走后端写入,不受前端 fs scope 限制 */
+  saveText: (path: string, content: string) =>
+    invoke<void>('write_text_file', { path, content }),
 
   /** 拍图转 Word / 表格转 Excel(mode: docx | xlsx) */
   convert: (
