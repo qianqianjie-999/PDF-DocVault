@@ -19,6 +19,10 @@ pub enum TaskKind {
     Insert,
     Extract,
     Reorder,
+    /// OCR 文字识别 / 拍图转 Word·Excel
+    Ocr,
+    /// 试卷去手写
+    Handwriting,
 }
 
 /// 任务状态
@@ -156,5 +160,22 @@ impl TaskManager {
             error: t.error.clone(),
             elapsed_ms: t.started.elapsed().as_millis(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cancel_roundtrip() {
+        let tm = TaskManager::new();
+        tm.register("t1", TaskKind::Ocr, 0);
+        tm.start("t1");
+        assert!(!tm.is_cancelled("t1"));
+        tm.cancel("t1");
+        assert!(tm.is_cancelled("t1"));
+        let st = tm.status("t1").expect("状态应存在");
+        assert_eq!(st.state, TaskState::Cancelled);
     }
 }

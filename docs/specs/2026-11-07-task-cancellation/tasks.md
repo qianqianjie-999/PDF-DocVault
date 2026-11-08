@@ -1,0 +1,31 @@
+# 任务清单：长任务可取消
+
+- [x] T1 `core/src/task/manager.rs`
+      - `TaskKind` 增加 `Ocr`、`Handwriting` 变体
+      - 新增单测：register→is_cancelled=false→cancel→is_cancelled=true/status=Cancelled
+- [x] T2 `core/src/pybridge.rs`
+      - 新增 `AbortCheck` 类型别名
+      - `spawn_with_timeout_watched` 增至 5 参 + 200ms 轮询 + abort→kill/TaskCancelled
+      - `run_pycore_inner` 增 `abort` 尾参；三个 wrapper 传 None
+      - 新增 `run_pycore_cancellable`
+- [x] T3 `core/src/ocr.rs`
+      - 新增 `CancelCheck` 类型别名
+      - `prepare_images` 增 `cancel` 尾参并在循环内检查
+      - `ocr_extract` / `ocr_convert` 增 `cancel` 尾参，改走 `run_pycore_cancellable`
+      - 更新既有单测/end-to-end 测试的 `None` 尾参
+- [x] T4 `core/src/image/handwriting.rs`
+      - `remove_handwriting` 增 `cancel` 尾参，改走 `run_pycore_cancellable`
+      - 更新 import 与 end-to-end 测试尾参
+- [x] T5 `frontend/src-tauri/src/commands/ocr_commands.rs`
+      - 三命令加 `state: State<AppState>`；register/start
+      - 构造取消闭包传入核心；显式区分取消/失败/join
+- [x] T6 `frontend/src-tauri/src/commands/scan_commands.rs`
+      - `remove_handwriting` 加 `state`、register/start、取消闭包、四态 match
+- [x] T7 `frontend/src/components/pdf/ProgressOverlay.vue`
+      - `cancellable`/`cancelling` props + `cancel` emit + footer 取消按钮
+- [x] T8 `frontend/src/views/desktop/OcrView.vue`
+      - 接 `taskApi.cancel`、activeTaskId/cancelling、cancelTask、TASK_CANCELLED 提示
+- [x] T9 `frontend/src/views/desktop/ScanView.vue`
+      - 去手写接取消（canCancel）；增强/合成PDF 不接；TASK_CANCELLED 提示
+- [x] T10 验证：cargo fmt/test/clippy、pdf_flow、pnpm typecheck/build/vitest
+- [ ] T11 汇报本轮未提交改动，等待用户确认是否提交

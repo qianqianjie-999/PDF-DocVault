@@ -5,11 +5,12 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 use uuid::Uuid;
 
 use crate::commands::{emit_complete, emit_progress};
 use crate::error::CmdResult;
+use crate::state::AppState;
 use pdf_docvault_core::image::{
     id_cards_to_pdf as core_id_cards_to_pdf, images_to_a4_pdf, images_to_pdf,
     remove_handwriting as core_remove_handwriting, scan_enhance_batch, HandwritingOptions,
@@ -242,9 +243,15 @@ pub struct HandwritingOutput {
 #[tauri::command]
 pub async fn remove_handwriting(
     app: AppHandle,
+    state: State<'_, AppState>,
     input: HandwritingInput,
 ) -> CmdResult<HandwritingOutput> {
     let task_id = input.task_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+    state
+        .tasks
+        .register(&task_id, pdf_docvault_core::task::TaskKind::Handwriting, 0);
+    state.tasks.start(&task_id);
+
     let inputs = input.inputs;
     let out_dir = input.out_dir;
     let options = HandwritingOptions {
@@ -254,18 +261,50 @@ pub async fn remove_handwriting(
     };
     let app2 = app.clone();
     let tid = task_id.clone();
-    let stats = tokio::task::spawn_blocking(move || {
+    let state_tasks = state.tasks.clone();
+    let cancel = {
+        let st = state_tasks.clone();
+        let t = tid.clone();
+        move || st.is_cancelled(&t)
+    };
+
+    let joined = tokio::task::spawn_blocking(move || {
         let cb = move |current: u32, total: u32| {
             emit_progress(&app2, &tid, "handwriting", current, total);
         };
         let pycore = pdf_docvault_core::ocr::resolve_pycore_dir()?;
-        core_remove_handwriting(&inputs, &out_dir, &pycore, &options, Some(&cb))
+        core_remove_handwriting(
+            &inputs,
+            &out_dir,
+            &pycore,
+            &options,
+            Some(&cb),
+            Some(&cancel),
+        )
     })
-    .await
-    .map_err(|e| crate::error::AppError {
-        code: "JOIN".into(),
-        message: e.to_string(),
-    })??;
+    .await;
+
+    let stats = match joined {
+        Ok(Ok(v)) => v,
+        Ok(Err(pdf_docvault_core::CoreError::TaskCancelled)) => {
+            state.tasks.cancel(&task_id);
+            emit_complete(&app, &task_id, "handwriting", "cancelled");
+            return Err(pdf_docvault_core::CoreError::TaskCancelled.into());
+        }
+        Ok(Err(e)) => {
+            let msg = e.to_string();
+            state.tasks.fail(&task_id, &msg);
+            return Err(e.into());
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            state.tasks.fail(&task_id, &msg);
+            return Err(crate::error::AppError {
+                code: "JOIN".into(),
+                message: msg,
+            });
+        }
+    };
 
     emit_complete(&app, &task_id, "handwriting", "done");
     Ok(HandwritingOutput {

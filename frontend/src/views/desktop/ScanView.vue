@@ -7,6 +7,7 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import FileDropZone from '@/components/pdf/FileDropZone.vue'
 import ProgressOverlay from '@/components/pdf/ProgressOverlay.vue'
 import { scanApi } from '@/api/scan'
+import { taskApi } from '@/api/task'
 import { useSettingsStore } from '@/stores/settings'
 import { basename, dirname, samePath } from '@/utils/file'
 import { openOutput } from '@/utils/openOutput'
@@ -23,6 +24,10 @@ const showProgress = ref(false)
 const progress = ref(0)
 const current = ref(0)
 const total = ref(0)
+// 当前任务 id(取消时用)、取消请求进行中标志、当前任务是否可取消(仅去手写接取消)
+const activeTaskId = ref('')
+const cancelling = ref(false)
+const canCancel = ref(false)
 
 const settings = useSettingsStore()
 
@@ -96,6 +101,18 @@ async function withProgress<T>(taskId: string, fn: () => Promise<T>): Promise<T>
   }
 }
 
+async function cancelTask() {
+  if (!activeTaskId.value) return
+  cancelling.value = true
+  try {
+    await taskApi.cancel(activeTaskId.value)
+  } catch (e: any) {
+    ElMessage.error(`取消失败: ${e?.message ?? e}`)
+  } finally {
+    cancelling.value = false
+  }
+}
+
 async function runEnhance() {
   if (!canRun.value) return
   const first = files.value[0].path
@@ -111,6 +128,7 @@ async function runEnhance() {
   running.value = true
   showProgress.value = true
   progress.value = 0
+  canCancel.value = false
   try {
     const taskId = `scan-${Date.now()}`
     const res = await withProgress(taskId, () =>
@@ -151,8 +169,10 @@ async function runRemoveHandwriting() {
   running.value = true
   showProgress.value = true
   progress.value = 0
+  canCancel.value = true
   try {
     const taskId = `handwriting-${Date.now()}`
+    activeTaskId.value = taskId
     const res = await withProgress(taskId, () =>
       scanApi.removeHandwriting(
         files.value.map((f) => f.path),
@@ -167,10 +187,15 @@ async function runRemoveHandwriting() {
     )
     openOutput({ dir: outDir as string, firstOutput: res.outputs[0] })
   } catch (e: any) {
-    ElMessage.error(`去手写失败: ${e?.message ?? e}`)
+    if (e?.code === 'TASK_CANCELLED') {
+      ElMessage.info('任务已取消')
+    } else {
+      ElMessage.error(`去手写失败: ${e?.message ?? e}`)
+    }
   } finally {
     running.value = false
-    // 用户可能在隐藏延迟内又开始下一轮,此时不能再把新一轮的进度层收掉
+    activeTaskId.value = ''
+    canCancel.value = false
     setTimeout(() => {
       if (!running.value) showProgress.value = false
     }, 800)
@@ -192,6 +217,7 @@ async function runToPdf() {
   running.value = true
   showProgress.value = true
   progress.value = 0
+  canCancel.value = false
   try {
     const taskId = `images-to-pdf-${Date.now()}`
     const res = await withProgress(taskId, () =>
@@ -379,6 +405,9 @@ async function runToPdf() {
       :percent="progress"
       :current="current"
       :total="total"
+      :cancellable="canCancel"
+      :cancelling="cancelling"
+      @cancel="cancelTask"
     />
   </div>
 </template>

@@ -6,6 +6,7 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import FileDropZone from '@/components/pdf/FileDropZone.vue'
 import ProgressOverlay from '@/components/pdf/ProgressOverlay.vue'
 import { ocrApi } from '@/api/ocr'
+import { taskApi } from '@/api/task'
 import { useSettingsStore } from '@/stores/settings'
 import { basename, samePath } from '@/utils/file'
 import { openOutput } from '@/utils/openOutput'
@@ -24,6 +25,9 @@ const showProgress = ref(false)
 const progress = ref(0)
 const current = ref(0)
 const total = ref(0)
+// 当前任务 id(取消时用)与取消请求进行中标志
+const activeTaskId = ref('')
+const cancelling = ref(false)
 
 // 环境自检状态
 const envChecking = ref(true)
@@ -120,6 +124,18 @@ async function withProgress<T>(taskId: string, fn: () => Promise<T>): Promise<T>
   }
 }
 
+async function cancelTask() {
+  if (!activeTaskId.value) return
+  cancelling.value = true
+  try {
+    await taskApi.cancel(activeTaskId.value)
+  } catch (e: any) {
+    ElMessage.error(`取消失败: ${e?.message ?? e}`)
+  } finally {
+    cancelling.value = false
+  }
+}
+
 async function runOcr() {
   if (!canRun.value) return
   // 文档转换模式:弹出保存对话框后走 convert 链路
@@ -133,6 +149,7 @@ async function runOcr() {
   pages.value = []
   try {
     const taskId = `ocr-${Date.now()}`
+    activeTaskId.value = taskId
     const res = await withProgress(taskId, () =>
       ocrApi.extractImages(
         files.value.map((f) => f.path),
@@ -148,9 +165,14 @@ async function runOcr() {
       `识别完成: ${res.pages.length} 页,引擎 ${res.engine},耗时 ${res.elapsed_ms}ms`,
     )
   } catch (e: any) {
-    ElMessage.error(`OCR 识别失败: ${e?.message ?? e}`)
+    if (e?.code === 'TASK_CANCELLED') {
+      ElMessage.info('任务已取消')
+    } else {
+      ElMessage.error(`OCR 识别失败: ${e?.message ?? e}`)
+    }
   } finally {
     running.value = false
+    activeTaskId.value = ''
     // 用户可能在隐藏延迟内又开始下一轮,此时不能再把新一轮的进度层收掉
     setTimeout(() => {
       if (!running.value) showProgress.value = false
@@ -180,6 +202,7 @@ async function runConvert(mode: ConvertMode) {
   progress.value = 0
   try {
     const taskId = `ocr-convert-${Date.now()}`
+    activeTaskId.value = taskId
     const res = await withProgress(taskId, () =>
       ocrApi.convert(
         files.value.map((f) => f.path),
@@ -197,9 +220,14 @@ async function runConvert(mode: ConvertMode) {
     )
     openOutput({ output: out as string })
   } catch (e: any) {
-    ElMessage.error(`转换失败: ${e?.message ?? e}`)
+    if (e?.code === 'TASK_CANCELLED') {
+      ElMessage.info('任务已取消')
+    } else {
+      ElMessage.error(`转换失败: ${e?.message ?? e}`)
+    }
   } finally {
     running.value = false
+    activeTaskId.value = ''
     // 用户可能在隐藏延迟内又开始下一轮,此时不能再把新一轮的进度层收掉
     setTimeout(() => {
       if (!running.value) showProgress.value = false
@@ -355,6 +383,9 @@ async function exportTxt() {
       :percent="progress"
       :current="current"
       :total="total"
+      :cancellable="running"
+      :cancelling="cancelling"
+      @cancel="cancelTask"
     />
   </div>
 </template>

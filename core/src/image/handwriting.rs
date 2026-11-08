@@ -10,8 +10,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::ocr::ProgressFn;
-use crate::pybridge::run_pycore;
+use crate::ocr::{CancelCheck, ProgressFn};
+use crate::pybridge::run_pycore_cancellable;
 use crate::{CoreError, Result};
 
 /// 去手写选项
@@ -75,6 +75,7 @@ pub fn remove_handwriting(
     pycore_dir: &Path,
     opts: &HandwritingOptions,
     progress: Option<&ProgressFn>,
+    cancel: Option<&CancelCheck>,
 ) -> Result<HandwritingStats> {
     if inputs.is_empty() {
         return Err(CoreError::InvalidArgument("未提供输入文件".into()));
@@ -86,7 +87,8 @@ pub fn remove_handwriting(
     };
 
     // 1. PDF 输入先渲染为临时 PNG(与 OCR 共用渲染流水线)
-    let (tmp_dir, images, pdf_pages) = crate::ocr::prepare_images(inputs, opts.dpi, &notify)?;
+    let (tmp_dir, images, pdf_pages) =
+        crate::ocr::prepare_images(inputs, opts.dpi, &notify, cancel)?;
 
     // 2. spawn Python 子进程
     let mut args: Vec<(String, String)> = vec![
@@ -99,7 +101,7 @@ pub fn remove_handwriting(
     for img in &images {
         args.push(("input".into(), img.to_string_lossy().into_owned()));
     }
-    let resp = run_pycore(
+    let resp = run_pycore_cancellable(
         pycore_dir,
         "remove_handwriting",
         args,
@@ -107,6 +109,7 @@ pub fn remove_handwriting(
         || {
             let _ = std::fs::remove_dir_all(&tmp_dir);
         },
+        cancel,
     );
 
     let resp = resp?;
@@ -156,8 +159,9 @@ mod tests {
             colors: vec!["blue".into(), "red".into()],
             ..Default::default()
         };
-        let stats = remove_handwriting(&[input.to_path_buf()], &out_dir, &pycore, &opts, None)
-            .expect("去手写失败");
+        let stats =
+            remove_handwriting(&[input.to_path_buf()], &out_dir, &pycore, &opts, None, None)
+                .expect("去手写失败");
         eprintln!("stats = {stats:?}");
         assert_eq!(stats.images, 1);
         assert!(stats.outputs[0].is_file());

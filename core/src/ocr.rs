@@ -16,6 +16,9 @@ use crate::{CoreError, Result};
 /// 进度回调类型(与 image::enhance 一致:current, total)
 pub type ProgressFn = dyn Fn(u32, u32) + Send + Sync;
 
+/// 取消检查回调:返回 true 表示任务已取消(命令层注入 TaskManager::is_cancelled)
+pub type CancelCheck = dyn Fn() -> bool + Send + Sync;
+
 /// OCR 任务选项
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OcrOptions {
@@ -107,6 +110,7 @@ pub fn ocr_extract(
     pycore_dir: &Path,
     opts: &OcrOptions,
     progress: Option<&ProgressFn>,
+    cancel: Option<&CancelCheck>,
 ) -> Result<OcrStats> {
     let notify = |cur: u32, total: u32| {
         if let Some(cb) = progress {
@@ -115,7 +119,7 @@ pub fn ocr_extract(
     };
 
     // 1. PDF 输入先渲染为临时 PNG
-    let (tmp_dir, images, pdf_pages) = prepare_images(inputs, opts.dpi, &notify)?;
+    let (tmp_dir, images, pdf_pages) = prepare_images(inputs, opts.dpi, &notify, cancel)?;
 
     // 2. spawn Python 子进程(extract:多个 --input)
     let mut args: Vec<(String, String)> = Vec::new();
@@ -128,9 +132,16 @@ pub fn ocr_extract(
     for img in &images {
         args.push(("input".into(), img.to_string_lossy().into_owned()));
     }
-    let resp = crate::pybridge::run_pycore(pycore_dir, "extract", args, opts.timeout_secs, || {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-    });
+    let resp = crate::pybridge::run_pycore_cancellable(
+        pycore_dir,
+        "extract",
+        args,
+        opts.timeout_secs,
+        || {
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+        },
+        cancel,
+    );
 
     let resp = resp?;
     if resp.ok {
@@ -198,6 +209,7 @@ pub fn ocr_convert(
     pycore_dir: &Path,
     opts: &OcrOptions,
     progress: Option<&ProgressFn>,
+    cancel: Option<&CancelCheck>,
 ) -> Result<ConvertStats> {
     if inputs.is_empty() {
         return Err(CoreError::InvalidArgument("未提供输入文件".into()));
@@ -208,7 +220,7 @@ pub fn ocr_convert(
         }
     };
 
-    let (tmp_dir, images, _pdf_pages) = prepare_images(inputs, opts.dpi, &notify)?;
+    let (tmp_dir, images, _pdf_pages) = prepare_images(inputs, opts.dpi, &notify, cancel)?;
 
     let mut args: Vec<(String, String)> =
         vec![("output".into(), output.to_string_lossy().into_owned())];
@@ -221,7 +233,7 @@ pub fn ocr_convert(
     for img in &images {
         args.push(("input".into(), img.to_string_lossy().into_owned()));
     }
-    let resp = crate::pybridge::run_pycore(
+    let resp = crate::pybridge::run_pycore_cancellable(
         pycore_dir,
         mode.subcommand(),
         args,
@@ -229,6 +241,7 @@ pub fn ocr_convert(
         || {
             let _ = std::fs::remove_dir_all(&tmp_dir);
         },
+        cancel,
     )?;
     if resp.ok {
         let _ = std::fs::remove_dir_all(&tmp_dir);
@@ -259,6 +272,7 @@ pub(crate) fn prepare_images(
     inputs: &[PathBuf],
     dpi: u32,
     notify: &impl Fn(u32, u32),
+    cancel: Option<&CancelCheck>,
 ) -> Result<(PathBuf, Vec<PathBuf>, u32)> {
     if inputs.is_empty() {
         return Err(CoreError::InvalidArgument("未提供输入文件".into()));
@@ -275,6 +289,11 @@ pub(crate) fn prepare_images(
     let mut pdf_pages = 0u32;
     let total_inputs = inputs.len() as u32;
     for (i, input) in inputs.iter().enumerate() {
+        // 渲染阶段也响应取消,避免长 PDF 渲染期间无法中断
+        if cancel.map(|c| c()).unwrap_or(false) {
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+            return Err(CoreError::TaskCancelled);
+        }
         if !input.is_file() {
             return Err(CoreError::Ocr(format!(
                 "输入文件不存在: {}",
@@ -359,8 +378,14 @@ mod tests {
             println!("跳过:缺少 pycore 或测试图");
             return;
         }
-        let stats = ocr_extract(&[img.to_path_buf()], &pycore, &OcrOptions::default(), None)
-            .expect("识别应成功");
+        let stats = ocr_extract(
+            &[img.to_path_buf()],
+            &pycore,
+            &OcrOptions::default(),
+            None,
+            None,
+        )
+        .expect("识别应成功");
         println!("engine={}, elapsed_ms={}", stats.engine, stats.elapsed_ms);
         println!("text:\n{}", stats.pages[0].text);
         assert_eq!(stats.pages.len(), 1);
@@ -387,6 +412,7 @@ mod tests {
             ConvertMode::Xlsx,
             &pycore,
             &OcrOptions::default(),
+            None,
             None,
         )
         .expect("转换应成功");
@@ -422,7 +448,7 @@ mod tests {
         .expect("合成 PDF 应成功");
 
         let (tmp_dir, images, pdf_pages) =
-            prepare_images(std::slice::from_ref(&pdf), 150, &|_, _| {}).expect("渲染应成功");
+            prepare_images(std::slice::from_ref(&pdf), 150, &|_, _| {}, None).expect("渲染应成功");
         assert_eq!(pdf_pages, 1);
         assert_eq!(images.len(), 2, "PDF 两页应渲染出两张图");
         assert!(

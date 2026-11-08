@@ -5,11 +5,12 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 use uuid::Uuid;
 
 use crate::commands::{emit_complete, emit_progress};
 use crate::error::{AppError, CmdResult};
+use crate::state::AppState;
 use pdf_docvault_core::ocr::{
     ocr_convert, ocr_extract, ConvertMode, ConvertStats, OcrOptions, OcrStats,
 };
@@ -62,24 +63,58 @@ pub struct OcrInput {
 }
 
 #[tauri::command]
-pub async fn ocr_extract_images(app: AppHandle, input: OcrInput) -> CmdResult<OcrStats> {
+pub async fn ocr_extract_images(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    input: OcrInput,
+) -> CmdResult<OcrStats> {
     let task_id = input.task_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+    state
+        .tasks
+        .register(&task_id, pdf_docvault_core::task::TaskKind::Ocr, 0);
+    state.tasks.start(&task_id);
+
     let inputs = input.inputs;
     let options = input.options;
     let app2 = app.clone();
     let tid = task_id.clone();
-    let stats = tokio::task::spawn_blocking(move || {
+    let state_tasks = state.tasks.clone();
+    let cancel = {
+        let st = state_tasks.clone();
+        let t = tid.clone();
+        move || st.is_cancelled(&t)
+    };
+
+    let joined = tokio::task::spawn_blocking(move || {
         let cb = move |current: u32, total: u32| {
             emit_progress(&app2, &tid, "ocr", current, total);
         };
         let pycore = pdf_docvault_core::ocr::resolve_pycore_dir()?;
-        ocr_extract(&inputs, &pycore, &options, Some(&cb))
+        ocr_extract(&inputs, &pycore, &options, Some(&cb), Some(&cancel))
     })
-    .await
-    .map_err(|e| AppError {
-        code: "JOIN".into(),
-        message: e.to_string(),
-    })??;
+    .await;
+
+    let stats = match joined {
+        Ok(Ok(v)) => v,
+        Ok(Err(pdf_docvault_core::CoreError::TaskCancelled)) => {
+            state.tasks.cancel(&task_id);
+            emit_complete(&app, &task_id, "ocr", "cancelled");
+            return Err(pdf_docvault_core::CoreError::TaskCancelled.into());
+        }
+        Ok(Err(e)) => {
+            let msg = e.to_string();
+            state.tasks.fail(&task_id, &msg);
+            return Err(e.into());
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            state.tasks.fail(&task_id, &msg);
+            return Err(AppError {
+                code: "JOIN".into(),
+                message: msg,
+            });
+        }
+    };
 
     emit_complete(&app, &task_id, "ocr", "done");
     Ok(stats)
@@ -101,6 +136,7 @@ pub struct OcrConvertInput {
 #[tauri::command]
 pub async fn ocr_convert_documents(
     app: AppHandle,
+    state: State<'_, AppState>,
     input: OcrConvertInput,
 ) -> CmdResult<ConvertStats> {
     let mode = match input.mode.as_str() {
@@ -114,23 +150,61 @@ pub async fn ocr_convert_documents(
         }
     };
     let task_id = input.task_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+    state
+        .tasks
+        .register(&task_id, pdf_docvault_core::task::TaskKind::Ocr, 0);
+    state.tasks.start(&task_id);
+
     let inputs = input.inputs;
     let output = input.output;
     let options = input.options;
     let app2 = app.clone();
     let tid = task_id.clone();
-    let stats = tokio::task::spawn_blocking(move || {
+    let state_tasks = state.tasks.clone();
+    let cancel = {
+        let st = state_tasks.clone();
+        let t = tid.clone();
+        move || st.is_cancelled(&t)
+    };
+
+    let joined = tokio::task::spawn_blocking(move || {
         let cb = move |current: u32, total: u32| {
             emit_progress(&app2, &tid, "ocr-convert", current, total);
         };
         let pycore = pdf_docvault_core::ocr::resolve_pycore_dir()?;
-        ocr_convert(&inputs, &output, mode, &pycore, &options, Some(&cb))
+        ocr_convert(
+            &inputs,
+            &output,
+            mode,
+            &pycore,
+            &options,
+            Some(&cb),
+            Some(&cancel),
+        )
     })
-    .await
-    .map_err(|e| AppError {
-        code: "JOIN".into(),
-        message: e.to_string(),
-    })??;
+    .await;
+
+    let stats = match joined {
+        Ok(Ok(v)) => v,
+        Ok(Err(pdf_docvault_core::CoreError::TaskCancelled)) => {
+            state.tasks.cancel(&task_id);
+            emit_complete(&app, &task_id, "ocr-convert", "cancelled");
+            return Err(pdf_docvault_core::CoreError::TaskCancelled.into());
+        }
+        Ok(Err(e)) => {
+            let msg = e.to_string();
+            state.tasks.fail(&task_id, &msg);
+            return Err(e.into());
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            state.tasks.fail(&task_id, &msg);
+            return Err(AppError {
+                code: "JOIN".into(),
+                message: msg,
+            });
+        }
+    };
 
     emit_complete(&app, &task_id, "ocr-convert", "done");
     Ok(stats)

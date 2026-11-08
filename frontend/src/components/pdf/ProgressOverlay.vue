@@ -1,13 +1,22 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-const props = defineProps<{
-  visible: boolean
-  percent: number
-  current?: number
-  total?: number
-  text?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    visible: boolean
+    percent: number
+    current?: number
+    total?: number
+    text?: string
+    /** 是否显示取消按钮(仅长任务开启) */
+    cancellable?: boolean
+    /** 取消请求进行中(按钮 loading) */
+    cancelling?: boolean
+  }>(),
+  { cancellable: false, cancelling: false },
+)
+
+const emit = defineEmits<{ cancel: [] }>()
 
 const status = computed(() => (props.percent >= 100 ? 'success' : undefined))
 const description = computed(() => {
@@ -40,6 +49,11 @@ const description = computed(() => {
       />
       <p class="desc">{{ description }}</p>
     </div>
+    <template v-if="cancellable" #footer>
+      <el-button type="danger" :loading="cancelling" @click="emit('cancel')">
+        取消任务
+      </el-button>
+    </template>
   </el-dialog>
 </template>
 

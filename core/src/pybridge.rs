@@ -16,6 +16,10 @@ use crate::{CoreError, Result};
 /// stderr 逐行回调(在读取线程内调用,需 Send + 'static)
 pub(crate) type StderrLineHandler = Box<dyn FnMut(&str) + Send>;
 
+/// 中止检查回调:返回 true 表示任务已取消,应立即终止子进程。
+/// 由命令层注入(读 TaskManager::is_cancelled),在主线程轮询中被同步调用。
+pub(crate) type AbortCheck = dyn Fn() -> bool + Send + Sync;
+
 // ===== 协议反序列化(pycore/main.py 输出) =====
 
 #[derive(Clone, Deserialize)]
@@ -193,6 +197,7 @@ pub(crate) fn spawn_with_timeout_watched(
     timeout_secs: u64,
     stdin_payload: Option<String>,
     on_stderr_line: Option<StderrLineHandler>,
+    abort: Option<&AbortCheck>,
 ) -> Result<(std::process::ExitStatus, String, String)> {
     use std::io::{BufRead, BufReader, Write};
     use std::thread;
@@ -250,17 +255,30 @@ pub(crate) fn spawn_with_timeout_watched(
     });
 
     let timeout = Duration::from_secs(timeout_secs.max(1));
-    let status = match rx.recv_timeout(timeout) {
-        Ok(st) => st.map_err(|e| CoreError::Ocr(format!("等待进程失败: {e}")))?,
-        Err(RecvTimeoutError::Timeout) => {
+    let poll = Duration::from_millis(200);
+    let mut waited = Duration::ZERO;
+    let status = loop {
+        // 每轮先查取消标志(命令层经 TaskManager 注入),命中即终止子进程
+        if abort.map(|a| a()).unwrap_or(false) {
             let _ = child.lock().unwrap().kill();
             let _ = child.lock().unwrap().wait();
-            return Err(CoreError::Ocr(format!(
-                "OCR_TIMEOUT:Python 进程超过 {timeout_secs}s 未完成,已终止"
-            )));
+            return Err(CoreError::TaskCancelled);
         }
-        Err(RecvTimeoutError::Disconnected) => {
-            return Err(CoreError::Ocr("等待进程失败:通道断开".into()));
+        match rx.recv_timeout(poll) {
+            Ok(st) => break st.map_err(|e| CoreError::Ocr(format!("等待进程失败: {e}")))?,
+            Err(RecvTimeoutError::Timeout) => {
+                waited += poll;
+                if waited >= timeout {
+                    let _ = child.lock().unwrap().kill();
+                    let _ = child.lock().unwrap().wait();
+                    return Err(CoreError::Ocr(format!(
+                        "OCR_TIMEOUT:Python 进程超过 {timeout_secs}s 未完成,已终止"
+                    )));
+                }
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err(CoreError::Ocr("等待进程失败:通道断开".into()));
+            }
         }
     };
     let stdout = out_handle.join().unwrap_or_default();
@@ -288,6 +306,7 @@ pub(crate) fn run_pycore(
         cleanup,
         None,
         None,
+        None,
     )
 }
 
@@ -311,6 +330,7 @@ pub(crate) fn run_pycore_stdin(
         cleanup,
         Some(stdin_payload),
         None,
+        None,
     )
 }
 
@@ -331,9 +351,33 @@ pub(crate) fn run_pycore_watched(
         cleanup,
         None,
         Some(on_stderr_line),
+        None,
     )
 }
 
+/// 与 [`run_pycore`] 相同,但支持通过 `abort` 回调随时中断子进程(任务取消)。
+/// `abort` 为 None 时退化为普通超时执行。
+pub(crate) fn run_pycore_cancellable(
+    pycore_dir: &Path,
+    subcommand: &str,
+    input_args: impl IntoIterator<Item = (String, String)>,
+    timeout_secs: u64,
+    cleanup: impl Fn(),
+    abort: Option<&AbortCheck>,
+) -> Result<PyResponse> {
+    run_pycore_inner(
+        pycore_dir,
+        subcommand,
+        input_args,
+        timeout_secs,
+        cleanup,
+        None,
+        None,
+        abort,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
 fn run_pycore_inner(
     pycore_dir: &Path,
     subcommand: &str,
@@ -342,6 +386,7 @@ fn run_pycore_inner(
     cleanup: impl Fn(),
     stdin_payload: Option<String>,
     on_stderr_line: Option<StderrLineHandler>,
+    abort: Option<&AbortCheck>,
 ) -> Result<PyResponse> {
     let python = resolve_python(pycore_dir)?;
     let mut cmd = Command::new(&python);
@@ -359,7 +404,7 @@ fn run_pycore_inner(
     }
 
     let (status, stdout, stderr) =
-        match spawn_with_timeout_watched(cmd, timeout_secs, stdin_payload, on_stderr_line) {
+        match spawn_with_timeout_watched(cmd, timeout_secs, stdin_payload, on_stderr_line, abort) {
             Ok(r) => r,
             Err(e) => {
                 cleanup();
