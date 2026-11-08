@@ -1562,7 +1562,7 @@ mod tests {
         let last = std::sync::Arc::new(std::sync::Mutex::new((0u32, 0u32)));
         let last2 = last.clone();
         let cb = move |c: u32, t: u32| {
-            *last2.lock().unwrap() = (c, t);
+            *last2.lock().unwrap_or_else(|p| p.into_inner()) = (c, t);
         };
         let stats = images_to_a4_pdf(
             &inputs,
@@ -1576,7 +1576,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(stats.pages, 2);
-        let (c, t) = *last.lock().unwrap();
+        let (c, t) = *last.lock().unwrap_or_else(|p| p.into_inner());
         assert_eq!(c, 3);
         assert_eq!(t, 3);
     }

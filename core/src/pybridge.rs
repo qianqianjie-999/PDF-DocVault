@@ -250,7 +250,10 @@ pub(crate) fn spawn_with_timeout_watched(
     let (tx, rx) = mpsc::channel();
     let waiter_child = Arc::clone(&child);
     thread::spawn(move || {
-        let status = waiter_child.lock().unwrap().wait();
+        let status = waiter_child
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .wait();
         let _ = tx.send(status);
     });
 
@@ -260,8 +263,8 @@ pub(crate) fn spawn_with_timeout_watched(
     let status = loop {
         // 每轮先查取消标志(命令层经 TaskManager 注入),命中即终止子进程
         if abort.map(|a| a()).unwrap_or(false) {
-            let _ = child.lock().unwrap().kill();
-            let _ = child.lock().unwrap().wait();
+            let _ = child.lock().unwrap_or_else(|p| p.into_inner()).kill();
+            let _ = child.lock().unwrap_or_else(|p| p.into_inner()).wait();
             return Err(CoreError::TaskCancelled);
         }
         match rx.recv_timeout(poll) {
@@ -269,8 +272,8 @@ pub(crate) fn spawn_with_timeout_watched(
             Err(RecvTimeoutError::Timeout) => {
                 waited += poll;
                 if waited >= timeout {
-                    let _ = child.lock().unwrap().kill();
-                    let _ = child.lock().unwrap().wait();
+                    let _ = child.lock().unwrap_or_else(|p| p.into_inner()).kill();
+                    let _ = child.lock().unwrap_or_else(|p| p.into_inner()).wait();
                     return Err(CoreError::Ocr(format!(
                         "OCR_TIMEOUT:Python 进程超过 {timeout_secs}s 未完成,已终止"
                     )));

@@ -80,7 +80,7 @@ impl TaskManager {
 
     /// 注册新任务
     pub fn register(&self, id: &str, kind: TaskKind, total: u32) {
-        let mut map = self.inner.lock().unwrap();
+        let mut map = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         map.insert(
             id.to_string(),
             TaskEntry {
@@ -97,14 +97,24 @@ impl TaskManager {
 
     /// 标记任务开始运行
     pub fn start(&self, id: &str) {
-        if let Some(t) = self.inner.lock().unwrap().get_mut(id) {
+        if let Some(t) = self
+            .inner
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get_mut(id)
+        {
             t.state = TaskState::Running;
         }
     }
 
     /// 上报进度
     pub fn report(&self, id: &str, current: u32, total: u32) {
-        if let Some(t) = self.inner.lock().unwrap().get_mut(id) {
+        if let Some(t) = self
+            .inner
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get_mut(id)
+        {
             t.current = current;
             t.total = total;
             t.progress = if total > 0 {
@@ -117,7 +127,12 @@ impl TaskManager {
 
     /// 标记完成
     pub fn complete(&self, id: &str) {
-        if let Some(t) = self.inner.lock().unwrap().get_mut(id) {
+        if let Some(t) = self
+            .inner
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get_mut(id)
+        {
             t.state = TaskState::Done;
             t.progress = 100;
         }
@@ -125,7 +140,12 @@ impl TaskManager {
 
     /// 标记失败
     pub fn fail(&self, id: &str, err: &str) {
-        if let Some(t) = self.inner.lock().unwrap().get_mut(id) {
+        if let Some(t) = self
+            .inner
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get_mut(id)
+        {
             t.state = TaskState::Failed;
             t.error = Some(err.to_string());
         }
@@ -133,7 +153,12 @@ impl TaskManager {
 
     /// 取消任务(仅标记状态,实际中断需业务侧轮询)
     pub fn cancel(&self, id: &str) {
-        if let Some(t) = self.inner.lock().unwrap().get_mut(id) {
+        if let Some(t) = self
+            .inner
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get_mut(id)
+        {
             t.state = TaskState::Cancelled;
         }
     }
@@ -150,16 +175,20 @@ impl TaskManager {
 
     /// 获取任务状态快照
     pub fn status(&self, id: &str) -> Option<TaskStatus> {
-        self.inner.lock().unwrap().get(id).map(|t| TaskStatus {
-            id: id.to_string(),
-            kind: t.kind,
-            state: t.state,
-            progress: t.progress,
-            current: t.current,
-            total: t.total,
-            error: t.error.clone(),
-            elapsed_ms: t.started.elapsed().as_millis(),
-        })
+        self.inner
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(id)
+            .map(|t| TaskStatus {
+                id: id.to_string(),
+                kind: t.kind,
+                state: t.state,
+                progress: t.progress,
+                current: t.current,
+                total: t.total,
+                error: t.error.clone(),
+                elapsed_ms: t.started.elapsed().as_millis(),
+            })
     }
 }
 
