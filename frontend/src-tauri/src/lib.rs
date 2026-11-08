@@ -102,6 +102,7 @@ pub fn run() {
             pdf_commands::compress_pdf,
             pdf_commands::pdf_to_images,
             pdf_commands::pdf_page_count,
+            pdf_commands::render_page_preview,
             // 文档管理
             document_commands::list_documents,
             document_commands::delete_document,

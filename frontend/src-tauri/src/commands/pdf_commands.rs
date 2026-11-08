@@ -3,6 +3,8 @@
 //! 同步的 lopdf 操作通过 `tokio::task::spawn_blocking` 在独立线程执行,
 //! 避免阻塞 Tauri 的异步运行时。长任务(转图片)通过 Tauri Events 推送进度。
 
+use base64::engine::general_purpose::STANDARD as B64;
+use base64::Engine;
 use image::ImageFormat;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -507,4 +509,55 @@ pub async fn pdf_page_count(input: PageCountInput) -> CmdResult<PageCountOutput>
         message: e.to_string(),
     })??;
     Ok(PageCountOutput { count })
+}
+
+// ===== 单页预览 =====
+
+#[derive(Deserialize)]
+pub struct PreviewInput {
+    pub input: PathBuf,
+    /// 待预览页码(1-based)
+    pub page: u32,
+    #[serde(default = "default_preview_dpi")]
+    pub dpi: u32,
+}
+
+fn default_preview_dpi() -> u32 {
+    120
+}
+
+#[derive(Serialize)]
+pub struct PreviewOutput {
+    /// `data:image/png;base64,` 前缀的 data URI
+    pub data: String,
+    pub width: u32,
+    pub height: u32,
+    pub page: u32,
+}
+
+#[tauri::command]
+pub async fn render_page_preview(input: PreviewInput) -> CmdResult<PreviewOutput> {
+    let inp = input.input.clone();
+    let page = input.page;
+    let dpi = input.dpi;
+    let out = tokio::task::spawn_blocking(move || -> pdf_docvault_core::Result<PreviewOutput> {
+        let img = pdf::render::render_page_to_image(&inp, page.saturating_sub(1), dpi)?;
+        let (width, height) = (img.width(), img.height());
+        let mut buf = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut buf), ImageFormat::Png)
+            .map_err(|e| pdf_docvault_core::CoreError::Image(format!("编码预览图失败: {e}")))?;
+        let data = format!("data:image/png;base64,{}", B64.encode(&buf));
+        Ok(PreviewOutput {
+            data,
+            width,
+            height,
+            page,
+        })
+    })
+    .await
+    .map_err(|e| crate::error::AppError {
+        code: "JOIN".into(),
+        message: e.to_string(),
+    })??;
+    Ok(out)
 }

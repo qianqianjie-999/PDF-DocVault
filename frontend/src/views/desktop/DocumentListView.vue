@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import PageHeader from '@/components/common/PageHeader.vue'
+import PdfPreview from '@/components/pdf/PdfPreview.vue'
 import { documentApi } from '@/api/document'
 import { pdfApi } from '@/api/pdf'
 import { formatFileSize, formatTimestamp, basename } from '@/utils/file'
@@ -14,6 +15,10 @@ const total = ref(0)
 const loading = ref(false)
 const page = ref(1)
 const pageSize = ref(20)
+
+// ===== 单页预览状态 =====
+const previewDoc = ref<Document | null>(null)
+const previewVisible = ref(false)
 
 // ===== 全文搜索状态 =====
 const keyword = ref('')
@@ -239,6 +244,16 @@ async function editTags(doc: Document) {
   }
 }
 
+function openPreview(doc: Document) {
+  if (doc.file_type !== 'pdf') return
+  if (!doc.file_path) {
+    ElMessage.warning('该文档缺少路径,无法预览')
+    return
+  }
+  previewDoc.value = doc
+  previewVisible.value = true
+}
+
 onMounted(load)
 
 onBeforeUnmount(() => {
@@ -324,8 +339,17 @@ onBeforeUnmount(() => {
         <el-table-column label="创建时间" width="160">
           <template #default="{ row }">{{ formatTimestamp(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
+            <el-button
+              v-if="row.file_type === 'pdf'"
+              text
+              size="small"
+              type="primary"
+              @click="openPreview(row as Document)"
+            >
+              预览
+            </el-button>
             <el-button text size="small" @click="editTags(row as Document)">标签</el-button>
             <el-button text size="small" type="danger" @click="remove(row as Document)">删除</el-button>
           </template>
@@ -341,6 +365,15 @@ onBeforeUnmount(() => {
         @current-change="load"
       />
     </div>
+
+    <el-drawer v-model="previewVisible" :title="previewDoc?.name ?? '预览'" size="60%">
+      <PdfPreview
+        v-if="previewDoc"
+        :path="previewDoc.file_path"
+        :total-pages="previewDoc.page_count ?? 0"
+        :dpi="120"
+      />
+    </el-drawer>
   </div>
 </template>
 

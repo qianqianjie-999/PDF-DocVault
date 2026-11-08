@@ -12,6 +12,7 @@ import type {
   DecryptReport,
   EncryptionInfo,
   WatermarkOptions,
+  PreviewOutput,
 } from '@/types/pdf'
 
 export const pdfApi = {
@@ -88,4 +89,8 @@ export const pdfApi = {
   },
 
   pageCount: (input: string) => call<PageCountOutput>('pdf_page_count', { input: { input } }),
+
+  /** 渲染 PDF 单页为 base64 data URI(1-based 页码) */
+  previewPage: (input: string, page: number, dpi = 120) =>
+    call<PreviewOutput>('render_page_preview', { input: { input, page, dpi } }),
 }

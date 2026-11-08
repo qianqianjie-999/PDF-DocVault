@@ -43,6 +43,15 @@ export interface PageCountOutput {
   count: number
 }
 
+/** 单页预览结果(与 Rust 端 PreviewOutput 对齐) */
+export interface PreviewOutput {
+  /** data:image/png;base64, 前缀的 data URI */
+  data: string
+  width: number
+  height: number
+  page: number
+}
+
 export interface PageRange {
   start: number
   end: number
