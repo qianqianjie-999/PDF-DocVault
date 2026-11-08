@@ -94,6 +94,7 @@ pub fn run() {
             pdf_commands::rotate_pages,
             pdf_commands::delete_pages,
             pdf_commands::insert_pages,
+            pdf_commands::reorder_pages,
             pdf_commands::extract_pages,
             pdf_commands::encrypt_pdf,
             pdf_commands::decrypt_pdf,

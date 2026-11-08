@@ -224,6 +224,30 @@ pub async fn insert_pages(input: InsertInput) -> CmdResult<PathBuf> {
     Ok(input.output)
 }
 
+// ===== 重排 =====
+
+#[derive(Deserialize)]
+pub struct ReorderInput {
+    pub input: PathBuf,
+    /// 1-based 新页码顺序(必须覆盖全部页面且不重复)
+    pub new_order: Vec<u32>,
+    pub output: PathBuf,
+}
+
+#[tauri::command]
+pub async fn reorder_pages(input: ReorderInput) -> CmdResult<PathBuf> {
+    let inp = input.input.clone();
+    let order = input.new_order.clone();
+    let out = input.output.clone();
+    tokio::task::spawn_blocking(move || pdf::pages::reorder_pages(&inp, &order, &out))
+        .await
+        .map_err(|e| crate::error::AppError {
+            code: "JOIN".into(),
+            message: e.to_string(),
+        })??;
+    Ok(input.output)
+}
+
 // ===== 提取 =====
 
 #[derive(Deserialize)]

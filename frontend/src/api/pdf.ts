@@ -46,6 +46,11 @@ export const pdfApi = {
       input: { input, page_nums: pageNums, output },
     }),
 
+  reorder: (input: string, newOrder: number[], output: string) =>
+    call<string>('reorder_pages', {
+      input: { input, new_order: newOrder, output },
+    }),
+
   encrypt: (input: string, output: string, options: EncryptOptions) =>
     call<EncryptReport>('encrypt_pdf', { input: { input, output, options } }),
 

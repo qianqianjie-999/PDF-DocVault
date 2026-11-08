@@ -37,6 +37,7 @@ type OpType =
   | 'watermark'
   | 'compress'
   | 'toImages'
+  | 'reorder'
 
 const op = ref<OpType>('merge')
 
@@ -46,6 +47,7 @@ const operations: { key: OpType; label: string; icon: string }[] = [
   { key: 'rotate', label: '旋转', icon: '🔄' },
   { key: 'delete', label: '删除页', icon: '🗑️' },
   { key: 'extract', label: '提取页', icon: '📤' },
+  { key: 'reorder', label: '重排', icon: '🔀' },
   { key: 'encrypt', label: '加密', icon: '🔒' },
   { key: 'decrypt', label: '解密', icon: '🔓' },
   { key: 'watermark', label: '水印', icon: '💧' },
@@ -59,6 +61,7 @@ const splitN = ref(50)
 const splitRanges = ref('1-10')
 const rotateDegrees = ref(90)
 const pageInput = ref('') // 旋转/删除/提取通用页码输入
+const reorderInput = ref('') // 重排新顺序输入
 const encryptPassword = ref('')
 const encryptBits = ref(256)
 // 权限默认:允许打印,禁止复制/修改/批注(文档保护场景的常见预期)
@@ -75,7 +78,7 @@ const encryptProbe = ref<EncryptionInfo | null>(null)
 // - 加密页据此提示「已加密,请先解密」,否则用户点加密只会收到「密码错误」;
 // - 解密页据此区分「需要打开密码」与「仅限制权限」,后者允许空密码直接解密;
 // - 其余单文件页据此提前拦截加密 PDF,避免用户选完输出路径才报错。
-const ENCRYPT_PROBE_OPS: OpType[] = ['encrypt', 'decrypt', 'rotate', 'delete', 'extract', 'watermark', 'compress']
+const ENCRYPT_PROBE_OPS: OpType[] = ['encrypt', 'decrypt', 'rotate', 'delete', 'extract', 'watermark', 'compress', 'reorder']
 watch(
   () => [op.value, filesStore.selectedFiles[0]?.path] as const,
   async () => {
@@ -121,7 +124,7 @@ watch(
 
 // 需要单文件的操作
 const needsSingleFile = computed(() =>
-  ['split', 'rotate', 'delete', 'extract', 'encrypt', 'decrypt', 'watermark', 'compress', 'toImages'].includes(
+  ['split', 'rotate', 'delete', 'extract', 'encrypt', 'decrypt', 'watermark', 'compress', 'toImages', 'reorder'].includes(
     op.value,
   ),
 )
@@ -262,6 +265,24 @@ async function run() {
         if (!out) break
         await pdfApi.extract(first, parsePageNums(pageInput.value), out)
         ElMessage.success('提取完成')
+        openOutput({ output: out })
+        break
+      }
+      case 'reorder': {
+        const first = files[0].path
+        const order = parsePageNums(reorderInput.value)
+        if (!order.length) {
+          ElMessage.warning('请输入新的页面顺序,如 3,1,2,4(需覆盖全部页面)')
+          break
+        }
+        if (encryptProbe.value?.locked) {
+          ElMessage.warning('该文件已加密,请先在「解密」中去除原有加密')
+          break
+        }
+        const out = await pickOutput(`reordered-${basename(first)}`, first)
+        if (!out) break
+        await pdfApi.reorder(first, order, out)
+        ElMessage.success('重排完成')
         openOutput({ output: out })
         break
       }
@@ -472,6 +493,16 @@ async function run() {
       <el-form v-else-if="op === 'delete' || op === 'extract'" label-width="100px" label-position="left">
         <el-form-item label="页码">
           <el-input v-model="pageInput" placeholder="如 1,3,5-8" />
+        </el-form-item>
+      </el-form>
+
+      <!-- 重排 -->
+      <el-form v-else-if="op === 'reorder'" label-width="100px" label-position="left">
+        <el-form-item label="新顺序">
+          <el-input v-model="reorderInput" placeholder="如 3,1,2,4(需覆盖全部页面,1-based)" />
+        </el-form-item>
+        <el-form-item>
+          <span class="hint">用逗号分隔原页码,按此顺序输出全部页面</span>
         </el-form-item>
       </el-form>
 
