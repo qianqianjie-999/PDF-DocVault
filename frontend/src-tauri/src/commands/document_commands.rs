@@ -1,6 +1,6 @@
 //! 文档管理命令:列表/删除/打标签/导入
 
-use rusqlite::params;
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::State;
@@ -42,30 +42,53 @@ pub async fn list_documents(
     state: State<'_, AppState>,
     params: ListParams,
 ) -> CmdResult<ListResult> {
+    let (items, total) = state
+        .db
+        .with_conn(|conn| Ok(query_documents(conn, false, &params)?))?;
+    Ok(ListResult { items, total })
+}
+
+/// 按状态过滤查询文档(items + total);`deleted_only=true` 时只查回收站。
+fn query_documents(
+    conn: &Connection,
+    deleted_only: bool,
+    params: &ListParams,
+) -> rusqlite::Result<(Vec<Document>, u32)> {
+    let status_cond = if deleted_only {
+        "status = 'deleted'"
+    } else {
+        "status != 'deleted'"
+    };
+
+    let mut where_sql = String::from(" WHERE ");
+    where_sql.push_str(status_cond);
+    let mut p: Vec<Box<dyn rusqlite::ToSql>> = vec![];
+    if let Some(t) = &params.file_type {
+        where_sql.push_str(" AND file_type = ?");
+        p.push(Box::new(t.clone()));
+    }
+    if let Some(tag) = &params.tag {
+        where_sql.push_str(" AND tags LIKE ?");
+        p.push(Box::new(format!("%\"{}\"%", tag)));
+    }
+
     let page = params.page.unwrap_or(1).max(1);
     let page_size = params.page_size.unwrap_or(20).clamp(1, 200);
     let offset = (page - 1) * page_size;
 
-    let items: Vec<Document> = state.db.with_conn(|conn| {
-        let mut sql = String::from(
-            "SELECT id, name, file_path, file_type, file_size, page_count, status, tags, created_at, updated_at \
-             FROM documents WHERE status != 'deleted'",
-        );
-        let mut p: Vec<Box<dyn rusqlite::ToSql>> = vec![];
-        if let Some(t) = &params.file_type {
-            sql.push_str(" AND file_type = ?");
-            p.push(Box::new(t.clone()));
-        }
-        if let Some(tag) = &params.tag {
-            sql.push_str(" AND tags LIKE ?");
-            p.push(Box::new(format!("%\"{}\"%", tag)));
-        }
-        sql.push_str(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
-        p.push(Box::new(page_size));
-        p.push(Box::new(offset));
+    let mut items_sql = String::from(
+        "SELECT id, name, file_path, file_type, file_size, page_count, status, tags, created_at, updated_at \
+         FROM documents",
+    );
+    items_sql.push_str(&where_sql);
+    items_sql.push_str(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
 
-        let refs: Vec<&dyn rusqlite::ToSql> = p.iter().map(|b| b.as_ref()).collect();
-        let mut stmt = conn.prepare(&sql)?;
+    let mut items = Vec::new();
+    {
+        let mut refs: Vec<&dyn rusqlite::ToSql> = p.iter().map(|b| b.as_ref()).collect();
+        refs.push(&page_size);
+        refs.push(&offset);
+        let mut stmt = conn.prepare(&items_sql)?;
         let rows = stmt.query_map(refs.as_slice(), |r| {
             Ok(Document {
                 id: r.get(0)?,
@@ -80,30 +103,17 @@ pub async fn list_documents(
                 updated_at: r.get(9)?,
             })
         })?;
-        let mut out = Vec::new();
         for row in rows {
-            out.push(row?);
+            items.push(row?);
         }
-        Ok(out)
-    })?;
+    }
 
-    let total: u32 = state.db.with_conn(|conn| {
-        let mut sql = String::from("SELECT COUNT(*) FROM documents WHERE status != 'deleted'");
-        let mut p: Vec<Box<dyn rusqlite::ToSql>> = vec![];
-        if let Some(t) = &params.file_type {
-            sql.push_str(" AND file_type = ?");
-            p.push(Box::new(t.clone()));
-        }
-        if let Some(tag) = &params.tag {
-            sql.push_str(" AND tags LIKE ?");
-            p.push(Box::new(format!("%\"{}\"%", tag)));
-        }
-        let refs: Vec<&dyn rusqlite::ToSql> = p.iter().map(|b| b.as_ref()).collect();
-        let n: i64 = conn.query_row(&sql, refs.as_slice(), |r| r.get(0))?;
-        Ok(n as u32)
-    })?;
+    let mut count_sql = String::from("SELECT COUNT(*) FROM documents");
+    count_sql.push_str(&where_sql);
+    let refs: Vec<&dyn rusqlite::ToSql> = p.iter().map(|b| b.as_ref()).collect();
+    let total: i64 = conn.query_row(&count_sql, refs.as_slice(), |r| r.get(0))?;
 
-    Ok(ListResult { items, total })
+    Ok((items, total as u32))
 }
 
 #[derive(Deserialize)]
@@ -220,6 +230,56 @@ pub async fn delete_document(state: State<'_, AppState>, params: DeleteParams) -
     if let Some(search) = &state.search {
         if let Err(e) = search.remove_document(params.id) {
             tracing::warn!("搜索索引同步失败(删除): {e}");
+        }
+    }
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn list_deleted_documents(
+    state: State<'_, AppState>,
+    params: ListParams,
+) -> CmdResult<ListResult> {
+    let (items, total) = state
+        .db
+        .with_conn(|conn| Ok(query_documents(conn, true, &params)?))?;
+    Ok(ListResult { items, total })
+}
+
+#[derive(Deserialize)]
+pub struct IdParams {
+    pub id: i64,
+}
+
+#[tauri::command]
+pub async fn restore_document(state: State<'_, AppState>, params: IdParams) -> CmdResult<bool> {
+    let now = chrono::Utc::now().timestamp();
+    state.db.with_conn(|conn| {
+        conn.execute(
+            "UPDATE documents SET status = 'active', updated_at = ? WHERE id = ?",
+            params![now, params.id],
+        )?;
+        Ok(())
+    })?;
+
+    // 回查文件名/类型/标签,恢复后重新入索引
+    let (name, file_type, tags) = state.db.with_conn(|conn| {
+        Ok(conn.query_row(
+            "SELECT name, file_type, tags FROM documents WHERE id = ?",
+            params![params.id],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )?)
+    })?;
+
+    if let Some(search) = &state.search {
+        if let Err(e) = search.index_document(params.id, &name, &file_type, tags.as_deref()) {
+            tracing::warn!("搜索索引同步失败(恢复): {e}");
         }
     }
     Ok(true)

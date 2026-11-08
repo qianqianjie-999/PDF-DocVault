@@ -20,6 +20,11 @@ const pageSize = ref(20)
 const previewDoc = ref<Document | null>(null)
 const previewVisible = ref(false)
 
+// ===== 回收站状态 =====
+const trashVisible = ref(false)
+const trashItems = ref<Document[]>([])
+const trashLoading = ref(false)
+
 // ===== 全文搜索状态 =====
 const keyword = ref('')
 const fileType = ref('')
@@ -254,6 +259,51 @@ function openPreview(doc: Document) {
   previewVisible.value = true
 }
 
+async function loadTrash() {
+  trashLoading.value = true
+  try {
+    const res = await documentApi.listDeleted({ page: 1, page_size: 200 })
+    trashItems.value = res.items
+  } catch (e: any) {
+    ElMessage.error(`加载回收站失败: ${e?.message ?? e}`)
+  } finally {
+    trashLoading.value = false
+  }
+}
+
+function openTrash() {
+  trashVisible.value = true
+  void loadTrash()
+}
+
+async function restoreDoc(doc: Document) {
+  try {
+    await documentApi.restore(doc.id)
+    ElMessage.success(`已恢复「${doc.name}」`)
+    await loadTrash()
+    await load()
+  } catch (e: any) {
+    ElMessage.error(`恢复失败: ${e?.message ?? e}`)
+  }
+}
+
+async function purgeDoc(doc: Document) {
+  try {
+    await ElMessageBox.confirm(`彻底删除「${doc.name}」?此操作不可恢复`, '确认', {
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+  try {
+    await documentApi.purge(doc.id)
+    ElMessage.success('已彻底删除')
+    await loadTrash()
+  } catch (e: any) {
+    ElMessage.error(`彻底删除失败: ${e?.message ?? e}`)
+  }
+}
+
 onMounted(load)
 
 onBeforeUnmount(() => {
@@ -295,6 +345,7 @@ onBeforeUnmount(() => {
         </span>
         <el-button text size="small" @click="clearSearch">清除搜索</el-button>
       </span>
+      <el-button @click="openTrash">回收站</el-button>
       <el-button type="primary" class="import-btn" @click="importFiles">导入文档</el-button>
     </div>
 
@@ -374,6 +425,31 @@ onBeforeUnmount(() => {
         :dpi="120"
       />
     </el-drawer>
+
+    <el-drawer v-model="trashVisible" title="回收站" size="52%">
+      <el-table :data="trashItems" v-loading="trashLoading" border>
+        <el-table-column prop="name" label="文件名" min-width="200" show-overflow-tooltip />
+        <el-table-column label="类型" width="80">
+          <template #default="{ row }">
+            <el-tag size="small">{{ row.file_type }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="删除时间" width="170">
+          <template #default="{ row }">{{ formatTimestamp(row.updated_at) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="170" fixed="right">
+          <template #default="{ row }">
+            <el-button text size="small" type="primary" @click="restoreDoc(row as Document)">
+              恢复
+            </el-button>
+            <el-button text size="small" type="danger" @click="purgeDoc(row as Document)">
+              彻底删除
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="!trashLoading && !trashItems.length" class="muted empty-trash">回收站为空</div>
+    </el-drawer>
   </div>
 </template>
 
@@ -411,5 +487,10 @@ onBeforeUnmount(() => {
   background: #ffe58f;
   padding: 0 1px;
   border-radius: 2px;
+}
+.empty-trash {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 13px;
 }
 </style>

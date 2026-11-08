@@ -24,4 +24,14 @@ export const documentApi = {
 
   delete: (id: number, permanent: boolean = false) =>
     call<boolean>('delete_document', { params: { id, permanent } }),
+
+  /** 回收站:列出软删除文档 */
+  listDeleted: (params: { page?: number; page_size?: number } = {}) =>
+    call<ListResult>('list_deleted_documents', { params }),
+
+  /** 回收站:恢复软删除文档 */
+  restore: (id: number) => call<boolean>('restore_document', { params: { id } }),
+
+  /** 回收站:彻底删除记录(从回收站清除) */
+  purge: (id: number) => call<boolean>('delete_document', { params: { id, permanent: true } }),
 }

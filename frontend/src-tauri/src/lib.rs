@@ -107,6 +107,8 @@ pub fn run() {
             document_commands::list_documents,
             document_commands::delete_document,
             document_commands::tag_document,
+            document_commands::restore_document,
+            document_commands::list_deleted_documents,
             document_commands::import_document,
             search_commands::search_documents,
             // 用户/激活
