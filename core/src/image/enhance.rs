@@ -8,7 +8,6 @@
 //! 4. **增强**:百分位对比度拉伸 / 灰度 / Bradley 自适应二值化
 //!
 //! 另提供多图合成 PDF(JPEG DCTDecode 嵌入,页面尺寸按 dpi 换算)。
-//! 基础能力(灰度/二值化/对比度)保留原有 API。
 
 use image::imageops::FilterType;
 use image::{DynamicImage, GrayImage, Luma, Rgb, RgbImage};
@@ -16,63 +15,6 @@ use lopdf::dictionary;
 use std::path::{Path, PathBuf};
 
 use crate::errors::{CoreError, Result};
-
-// ===== 基础增强(原有 API) =====
-
-/// 增强选项
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct EnhanceOptions {
-    pub grayscale: bool,
-    pub binarize: bool,
-    /// 二值化阈值 0-255
-    pub threshold: u8,
-    /// 对比度因子 1.0=原样
-    pub contrast: f32,
-}
-
-impl Default for EnhanceOptions {
-    fn default() -> Self {
-        Self {
-            grayscale: false,
-            binarize: false,
-            threshold: 180,
-            contrast: 1.0,
-        }
-    }
-}
-
-/// 转灰度
-pub fn grayscale(input: &Path, output: &Path) -> Result<()> {
-    let img = image::open(input).map_err(|e| CoreError::Image(e.to_string()))?;
-    let gray = DynamicImage::ImageLuma8(img.to_luma8());
-    gray.save(output)
-        .map_err(|e| CoreError::Image(e.to_string()))?;
-    Ok(())
-}
-
-/// 二值化
-pub fn binarize(input: &Path, output: &Path, threshold: u8) -> Result<()> {
-    let img = image::open(input).map_err(|e| CoreError::Image(e.to_string()))?;
-    let gray = img.to_luma8();
-    let mut out = GrayImage::new(gray.width(), gray.height());
-    for (x, y, pixel) in gray.enumerate_pixels() {
-        let v = if pixel[0] >= threshold { 255 } else { 0 };
-        out.put_pixel(x, y, Luma([v]));
-    }
-    out.save(output)
-        .map_err(|e| CoreError::Image(e.to_string()))?;
-    Ok(())
-}
-
-/// 调整对比度
-pub fn adjust_contrast(input: &Path, output: &Path, factor: f32) -> Result<()> {
-    let img = image::open(input).map_err(|e| CoreError::Image(e.to_string()))?;
-    let adjusted = img.adjust_contrast(factor);
-    adjusted
-        .save(output)
-        .map_err(|e| CoreError::Image(e.to_string()))?;
-    Ok(())
-}
 
 // ===== 文档扫描增强 =====
 
